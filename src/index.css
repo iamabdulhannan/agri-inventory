@@ -1,0 +1,183 @@
+@import "tailwindcss";
+
+/* dark: utilities follow the .dark class on <html> (set by ThemeProvider) */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-page: #f6f7f4; /* app background */
+  --color-surface: #ffffff; /* cards, inputs, menus */
+  --color-primary: #15803d; /* primary buttons (same in both themes) */
+  --color-primary-hover: #166534;
+  --font-sans: "Inter", "Noto Nastaliq Urdu", ui-sans-serif, system-ui, sans-serif;
+  --color-brand-50: #f0fdf4;
+  --color-brand-100: #dcfce7;
+  --color-brand-200: #bbf7d0;
+  --color-brand-500: #22c55e;
+  --color-brand-600: #16a34a;
+  --color-brand-700: #15803d;
+  --color-brand-800: #166534;
+  --color-brand-900: #14532d;
+}
+
+html,
+body {
+  background: var(--color-page);
+  color: var(--color-stone-900);
+  -webkit-font-smoothing: antialiased;
+}
+
+/*
+ * Dark theme: remap the palette instead of adding dark: classes everywhere.
+ * Neutral (stone) scale is inverted; tinted 50-300 shades become dark tints and
+ * 700-900 text shades become light, so badges, alerts and links stay readable.
+ * Screen only, so printed reports are always light.
+ */
+@media screen {
+  html.dark {
+    color-scheme: dark;
+    --color-page: #111311;
+    --color-surface: #1a1d1a;
+    --color-primary: #16803c;
+    --color-primary-hover: #1a9447;
+
+    --color-stone-50: #222622;
+    --color-stone-100: #2a2e2a;
+    --color-stone-200: #343934;
+    --color-stone-300: #454a45;
+    --color-stone-400: #7c827b;
+    --color-stone-500: #9ba19a;
+    --color-stone-600: #b5bab4;
+    --color-stone-700: #cfd3ce;
+    --color-stone-800: #e3e6e2;
+    --color-stone-900: #f1f3f0;
+
+    --color-brand-50: #12261a;
+    --color-brand-100: #173322;
+    --color-brand-200: #1f4a30;
+    --color-brand-700: #5bd48a;
+    --color-brand-800: #86efac;
+    --color-brand-900: #bbf7d0;
+
+    --color-red-50: #2a1515;
+    --color-red-100: #3a1a1a;
+    --color-red-200: #5a2424;
+    --color-red-300: #7f2a2a;
+    --color-red-700: #fca5a5;
+    --color-red-800: #fecaca;
+
+    --color-amber-50: #2a2210;
+    --color-amber-100: #3a2e12;
+    --color-amber-200: #5a4718;
+    --color-amber-300: #6b5418;
+    --color-amber-700: #fcd34d;
+    --color-amber-800: #fde68a;
+    --color-amber-900: #fef3c7;
+
+    --color-orange-100: #3a2412;
+    --color-orange-200: #5a3618;
+    --color-orange-700: #fdba74;
+    --color-orange-800: #fed7aa;
+
+    --color-sky-100: #10283a;
+    --color-sky-200: #173a55;
+    --color-sky-800: #7dd3fc;
+  }
+}
+
+/* Urdu: Nastaliq needs extra line height */
+html[lang="ur"] body {
+  line-height: 2;
+}
+html[lang="ur"] h1,
+html[lang="ur"] h2 {
+  line-height: 1.9 !important;
+}
+html[lang="ur"] .num,
+.num {
+  font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+}
+
+.table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.tbl {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+.tbl th {
+  text-align: start;
+  font-weight: 600;
+  color: var(--color-stone-600);
+  background: var(--color-stone-50);
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid var(--color-stone-200);
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+}
+.tbl td {
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid var(--color-stone-100);
+  vertical-align: middle;
+}
+.tbl tbody tr:hover {
+  background: var(--color-stone-50);
+}
+.tbl tfoot td {
+  font-weight: 700;
+  background: var(--color-stone-100);
+  border-top: 2px solid var(--color-stone-300);
+}
+.tbl .r {
+  text-align: end;
+}
+
+.print-only {
+  display: none;
+}
+
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+  html,
+  body {
+    background: #fff;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .print-only {
+    display: block !important;
+  }
+  .print-plain {
+    box-shadow: none !important;
+    border: 0 !important;
+    padding: 0 !important;
+  }
+  main {
+    padding: 0 !important;
+  }
+  .tbl {
+    font-size: 10.5px;
+  }
+  .tbl th {
+    position: static;
+  }
+  .tbl th,
+  .tbl td {
+    padding: 4px 6px;
+    border-bottom: 1px solid #ddd;
+  }
+  .table-wrap {
+    overflow: visible;
+  }
+}
