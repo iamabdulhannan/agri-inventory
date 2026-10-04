@@ -1,4 +1,4 @@
-import { FileText, Printer, Search, Trash2, Undo2 } from 'lucide-react'
+import { FileText, Pencil, Printer, Search, Trash2, Undo2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { PrintHeader, ReportButtons } from '../components/domain'
@@ -160,7 +160,8 @@ export function Sales() {
                             <td className="r num text-brand-700">{fmtMoney(p.paid, lang)}</td>
                             <td className="r">{due > 0 ? <Badge tone="red">{fmtMoney(due, lang)}</Badge> : <span className="text-stone-300">—</span>}</td>
                             <td className="text-stone-500">{p.created_by_name}</td>
-                            <td className="no-print r">
+                            <td className="no-print r whitespace-nowrap">
+                              {isAdmin && <Button size="sm" variant="ghost" onClick={() => nav(`/stock-in?edit=${p.id}`)} aria-label={t('edit')} title={t('edit')}><Pencil className="size-4" /></Button>}
                               {isAdmin && <Button size="sm" variant="ghost" onClick={() => voidPurchase(p)} aria-label={t('voidDoc')} title={t('voidDoc')}><Trash2 className="size-4 text-red-600" /></Button>}
                             </td>
                           </tr>

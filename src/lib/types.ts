@@ -111,12 +111,13 @@ export interface Movement {
   note: string | null
   created_by: string | null
   created_at: string
-  batches?: { batch_no: string; expiry_date: string; product_id: string } | null
+  batches?: { batch_no: string; expiry_date: string; product_id: string; mfg_date?: string | null } | null
   profiles?: { full_name: string } | null
   /** name saved on the entry; kept after the member is removed */
   created_by_name?: string | null
   sale_id?: string | null
   purchase_id?: string | null
+  return_id?: string | null
   unit_price?: number | null
   unit_cost?: number | null
 }

@@ -1,4 +1,4 @@
-import { ArrowDownToLine, Check, FileSpreadsheet, Plus, X } from 'lucide-react'
+import { ArrowDownToLine, Check, FileSpreadsheet, Pencil, Plus, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ProductPicker } from '../components/domain'
@@ -61,8 +61,45 @@ export function StockIn() {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [newFor, setNewFor] = useState<number | null>(null)
+  // edit mode: /stock-in?edit=<purchase id>
+  const editId = params.get('edit')
+  const [editing, setEditing] = useState<{ id: string; no: number } | null>(null)
+  const [editError, setEditError] = useState('')
 
   useEffect(() => setDate(today), [today])
+
+  useEffect(() => {
+    if (!editId) return
+    let cancelled = false
+    ;(async () => {
+      const [{ data: pur, error: e1 }, { data: moves, error: e2 }] = await Promise.all([
+        supabase.from('purchases').select('*').eq('id', editId).single(),
+        supabase.from('stock_movements').select('qty, unit_price, batches(product_id, batch_no, expiry_date, mfg_date)').eq('purchase_id', editId).order('created_at'),
+      ])
+      if (cancelled) return
+      if (e1 || e2 || !pur) return setEditError(errText(e1 ?? e2, t))
+      type Row = { qty: number; unit_price: number | null; batches: { product_id: string; batch_no: string; expiry_date: string; mfg_date: string | null } }
+      setType('purchase')
+      setDate(pur.purchase_date)
+      setPartyId(pur.party_id ?? '')
+      setParty(pur.party_id ? '' : pur.supplier_name ?? '')
+      setReference(pur.reference ?? '')
+      setNote(pur.note ?? '')
+      setPaid(String(Number(pur.paid)))
+      setLines(((moves ?? []) as unknown as Row[]).map((m) => ({
+        key: seq++,
+        product_id: m.batches.product_id,
+        batch_no: m.batches.batch_no.startsWith('EXP-') ? '' : m.batches.batch_no,
+        mfg_date: m.batches.mfg_date ?? '',
+        expiry_date: m.batches.expiry_date,
+        qty: String(Number(m.qty)),
+        rate: m.unit_price == null ? '' : String(Number(m.unit_price)),
+      })))
+      setEditing({ id: pur.id, no: pur.purchase_no })
+    })()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editId])
 
   const batchesByProduct = useMemo(() => {
     const m = new Map<string, BatchStock[]>()
@@ -108,6 +145,32 @@ export function StockIn() {
     if (isPurchase && (paidNum < 0 || paidNum > total)) return setErr(t('errInvalidPaid'))
     if (isPurchase && due > 0 && !partyId) return setErr(t('errCreditNeedsParty'))
     setBusy(true)
+    if (editing) {
+      const { error } = await supabase.rpc('update_purchase', {
+        p_org: org.id,
+        p_purchase: editing.id,
+        p_date: date,
+        p_lines: lines.map((l) => ({
+          product_id: l.product_id,
+          batch_no: l.batch_no.trim() || null,
+          mfg_date: l.mfg_date || null,
+          expiry_date: l.expiry_date,
+          qty: Number(l.qty),
+          unit_price: l.rate === '' ? null : Number(l.rate),
+        })),
+        p_party: party || null,
+        p_reference: reference || null,
+        p_note: note || null,
+        p_party_id: partyId || null,
+        p_paid: paidNum,
+      })
+      setBusy(false)
+      if (error) return setErr(errText(error, t))
+      toast(t('purchaseUpdated', { n: editing.no }))
+      refresh()
+      nav('/sales?tab=purchases')
+      return
+    }
     const { data: n, error } = await supabase.rpc('record_stock_in', {
       p_org: org.id,
       p_date: date,
@@ -147,14 +210,27 @@ export function StockIn() {
   return (
     <div className="mx-auto max-w-4xl">
       <PageHeader
-        title={<span className="flex items-center gap-2"><ArrowDownToLine className="size-6 text-brand-700" /> {t('stockInTitle')}</span>}
-        actions={<Button variant="secondary" onClick={() => nav('/stock-in/import')}><FileSpreadsheet className="size-4" /> {t('bulkImport')}</Button>}
+        title={<span className="flex items-center gap-2"><ArrowDownToLine className="size-6 text-brand-700" /> {editing ? t('editPurchase', { n: editing.no }) : t('stockInTitle')}</span>}
+        actions={
+          editId ? (
+            <Button variant="secondary" onClick={() => nav('/sales?tab=purchases')}><X className="size-4" /> {t('cancelEdit')}</Button>
+          ) : (
+            <Button variant="secondary" onClick={() => nav('/stock-in/import')}><FileSpreadsheet className="size-4" /> {t('bulkImport')}</Button>
+          )
+        }
       />
+      {editId && !editing && !editError && <Loading />}
+      {editError && <div className="mb-4"><ErrorBox>{editError}</ErrorBox></div>}
+      {editing && (
+        <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          <Pencil className="mt-0.5 size-4 shrink-0" /> {t('editPurchaseHint')}
+        </div>
+      )}
 
       <Card className="p-4">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Field label={t('entryType')}>
-            <Select value={type} onChange={(e) => { setType(e.target.value as MovementType | 'opening'); setInvLoaded(false) }}>
+            <Select value={type} disabled={!!editId} onChange={(e) => { setType(e.target.value as MovementType | 'opening'); setInvLoaded(false) }}>
               <option value="purchase">{t('mv_purchase')}</option>
               <option value="opening">{t('openingStock')}</option>
               <option value="return_in">{t('mv_return_in')}</option>

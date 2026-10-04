@@ -37,6 +37,7 @@ React + Vite + Tailwind on the front end, Supabase (Postgres + Auth) on the back
    5. `supabase/migrations/005_sales_khata.sql`: prices, sales invoices and receipts, purchases, khata (customer and supplier ledgers), roznamcha and profit
    6. `supabase/migrations/006_sale_returns.sql`: customer returns against a sale invoice (credit to khata or cash refund)
    7. `supabase/migrations/007_opening_stock.sql`: opening stock (no cash or khata entry), used by single and bulk stock-in
+   8. `supabase/migrations/008_edit_stock_in.sql`: edit purchases and single stock-in lines (owner / admin)
 3. Under **Authentication → URL Configuration**:
    - Set **Site URL** to your app URL (`http://localhost:5173` while developing).
    - Add `http://localhost:5173/**` and your production URL `/**` to **Redirect URLs**.

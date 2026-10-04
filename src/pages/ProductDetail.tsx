@@ -16,6 +16,7 @@ import { authorOf, type BatchStock, type Movement } from '../lib/types'
 import { fmtNum } from '../lib/units'
 import { fmtMoney } from '../lib/money'
 import { MovementBadge } from './Dashboard'
+import { EditStockLine, type EditableLine } from '../components/EditStockLine'
 
 export function ProductDetail() {
   const { id = '' } = useParams()
@@ -26,6 +27,7 @@ export function ProductDetail() {
   const label = usePackLabel()
   const [editing, setEditing] = useState(false)
   const [adjusting, setAdjusting] = useState<BatchStock | null>(null)
+  const [editLine, setEditLine] = useState<EditableLine | null>(null)
 
   const { data, error, loading, reload } = useLoad(async () => {
     const [catalog, batches, moves] = await Promise.all([
@@ -33,7 +35,7 @@ export function ProductDetail() {
       fetchAll<BatchStock>((a, b) => supabase.from('batch_stock').select('*').eq('product_id', id).order('expiry_date').range(a, b)),
       supabase
         .from('stock_movements')
-        .select('*, batches!inner(batch_no, expiry_date, product_id), profiles(full_name)')
+        .select('*, batches!inner(batch_no, expiry_date, mfg_date, product_id), profiles(full_name)')
         .eq('batches.product_id', id)
         .order('movement_date', { ascending: false })
         .order('created_at', { ascending: false })
@@ -179,6 +181,7 @@ export function ProductDetail() {
                   <th>{t('party')}</th>
                   <th>{t('reference')}</th>
                   <th>{t('by')}</th>
+                  {isAdmin && <th className="no-print" />}
                 </tr>
               </thead>
               <tbody>
@@ -192,6 +195,21 @@ export function ProductDetail() {
                     <td>{m.party}</td>
                     <td className="num">{m.reference}</td>
                     <td className="text-stone-500">{authorOf(m)}</td>
+                    {isAdmin && (
+                      <td className="no-print r">
+                        {(m.type === 'purchase' || m.type === 'return_in') && !m.sale_id && !m.return_id && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => (m.purchase_id ? nav(`/stock-in?edit=${m.purchase_id}`) : setEditLine({ movement: m, product: p }))}
+                            aria-label={t('edit')}
+                            title={m.purchase_id ? t('editPurchaseShort') : t('edit')}
+                          >
+                            <Pencil className="size-4" />
+                          </Button>
+                        )}
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -211,6 +229,7 @@ export function ProductDetail() {
           refresh()
         }}
       />
+      <EditStockLine line={editLine} onClose={() => setEditLine(null)} onSaved={() => { setEditLine(null); toast(t('saved')); refresh() }} />
       <AdjustModal batch={adjusting} onClose={() => setAdjusting(null)} onDone={() => { setAdjusting(null); refresh(); toast(t('saved')) }} />
     </div>
   )

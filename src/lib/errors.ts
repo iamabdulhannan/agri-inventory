@@ -24,6 +24,8 @@ const MAP: [RegExp, TKey][] = [
   [/PASSWORD_TOO_SHORT|weak_password|Password should be at least/i, 'passwordMin'],
   [/USE_PROFILE/, 'errUseProfile'],
   [/CANNOT_REMOVE_SELF/, 'errCannotRemoveSelf'],
+  [/EDIT_VIA_INVOICE/, 'errEditViaInvoice'],
+  [/\bNOT_FOUND\b/, 'errNotFound'],
   [/same_password|should be different from the old/i, 'errSamePassword'],
   [/products_unique_variant/, 'errDuplicateProduct'],
   [/duplicate key|already exists/i, 'errDuplicate'],

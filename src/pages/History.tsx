@@ -1,6 +1,6 @@
-import { History as HistoryIcon, Search, Trash2 } from 'lucide-react'
+import { History as HistoryIcon, Pencil, Search, Trash2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { PrintHeader, ProductName, QtyCell, ReportButtons } from '../components/domain'
 import { Button, Card, Empty, ErrorBox, Field, Input, Loading, PageHeader, Select, useFeedback } from '../components/ui'
 import { useOrg } from '../lib/app'
@@ -15,12 +15,15 @@ import { ALL_TYPES, authorOf, type Movement, type MovementType } from '../lib/ty
 import { fmtPack } from '../lib/units'
 import { fmtMoney } from '../lib/money'
 import { MovementBadge } from './Dashboard'
+import { EditStockLine, type EditableLine } from '../components/EditStockLine'
 
 export function History() {
   const { t, pick, lang } = useI18n()
   const { org, today, version, isAdmin, refresh } = useOrg()
   const { toast, confirm } = useFeedback()
   const [params] = useSearchParams()
+  const nav = useNavigate()
+  const [editLine, setEditLine] = useState<EditableLine | null>(null)
   const [from, setFrom] = useState(() => monthRange(monthOf(today))[0])
   const [to, setTo] = useState(today)
   const [type, setType] = useState<'' | MovementType>('')
@@ -32,7 +35,7 @@ export function History() {
     const moves = await fetchAll<Movement>((a, b) => {
       let qb = supabase
         .from('stock_movements')
-        .select('*, batches!inner(batch_no, expiry_date, product_id), profiles(full_name)')
+        .select('*, batches!inner(batch_no, expiry_date, mfg_date, product_id), profiles(full_name)')
         .eq('org_id', org.id)
         .gte('movement_date', from)
         .lte('movement_date', to)
@@ -147,12 +150,26 @@ export function History() {
                         <td className="text-stone-500">{authorOf(m)}</td>
                         {isAdmin && (
                           <td className="no-print r">
-                            {/* lines of an invoice are voided with the whole invoice (Invoices page) */}
-                            {m.sale_id || m.purchase_id ? null : (
-                              <Button size="sm" variant="ghost" onClick={() => del(m)} aria-label={t('delete')}>
-                                <Trash2 className="size-4 text-red-600" />
-                              </Button>
-                            )}
+                            <div className="flex justify-end gap-1">
+                              {/* stock-in lines can be edited; purchase lines open the whole purchase */}
+                              {(m.type === 'purchase' || m.type === 'return_in') && !m.sale_id && !m.return_id && p && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => (m.purchase_id ? nav(`/stock-in?edit=${m.purchase_id}`) : setEditLine({ movement: m, product: p }))}
+                                  aria-label={t('edit')}
+                                  title={m.purchase_id ? t('editPurchaseShort') : t('edit')}
+                                >
+                                  <Pencil className="size-4" />
+                                </Button>
+                              )}
+                              {/* lines of an invoice are voided with the whole invoice (Invoices page) */}
+                              {m.sale_id || m.purchase_id || m.return_id ? null : (
+                                <Button size="sm" variant="ghost" onClick={() => del(m)} aria-label={t('delete')} title={t('delete')}>
+                                  <Trash2 className="size-4 text-red-600" />
+                                </Button>
+                              )}
+                            </div>
                           </td>
                         )}
                       </tr>
@@ -164,6 +181,7 @@ export function History() {
           )}
         </Card>
       )}
+      <EditStockLine line={editLine} onClose={() => setEditLine(null)} onSaved={() => { setEditLine(null); toast(t('saved')); refresh() }} />
     </div>
   )
 }
