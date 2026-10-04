@@ -74,11 +74,11 @@ export function ReportButtons({ onExcel }: { onExcel?: () => void }) {
   return (
     <>
       {onExcel && (
-        <Button variant="secondary" size="sm" onClick={onExcel}>
+        <Button variant="secondary" onClick={onExcel}>
           <FileSpreadsheet className="size-4" /> {t('exportExcel')}
         </Button>
       )}
-      <Button variant="secondary" size="sm" onClick={() => window.print()}>
+      <Button variant="secondary" onClick={() => window.print()}>
         <Printer className="size-4" /> {t('print')}
       </Button>
     </>
@@ -112,7 +112,7 @@ export function ProductPicker({
     if (!terms.length) return active.slice(0, 200)
     return active
       .filter((p) => {
-        const hay = `${p.name} ${p.name_ur ?? ''} ${p.company_name ?? ''} ${fmtPack(p.pack_size, p.pack_unit)} ${p.pack_size}${p.pack_unit} ${p.category_name}`.toLowerCase()
+        const hay = `${p.name} ${p.name_ur ?? ''} ${p.company_name ?? ''} ${fmtPack(p.pack_size, p.pack_unit)} ${p.pack_size}${p.pack_unit} ${p.category_name} ${p.notes ?? ''}`.toLowerCase()
         return terms.every((x) => hay.includes(x))
       })
       .slice(0, 200)

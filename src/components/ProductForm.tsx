@@ -7,7 +7,7 @@ import { useI18n } from '../lib/i18n'
 import { supabase } from '../lib/supabase'
 import type { PackType, PackUnit, Product } from '../lib/types'
 import { LIQUID_PRESETS, PACK_TYPES, SOLID_PRESETS, fmtPack, measureOf, suggestPackType, type Preset } from '../lib/units'
-import { Button, ErrorBox, Field, Input, Modal, Select, Textarea } from './ui'
+import { Button, ErrorBox, Field, Input, Modal, Select, Segmented } from './ui'
 import { cx } from '../lib/cx'
 
 interface SizeRow extends Preset {
@@ -160,7 +160,7 @@ export function ProductForm({
         <Field label={t('productName')} required>
           <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Confidor 200 SL" />
         </Field>
-        <Field label={t('urduName')} hint={t('optional')}>
+        <Field label={t('urduName')} optional>
           <Input value={nameUr} onChange={(e) => setNameUr(e.target.value)} dir="rtl" placeholder="کونفیڈور" />
         </Field>
         <Field label={t('category')} required>
@@ -171,7 +171,7 @@ export function ProductForm({
             ))}
           </Select>
         </Field>
-        <Field label={t('company')} hint={t('optional')}>
+        <Field label={t('company')} optional>
           {newCompany === null ? (
             <Select
               value={companyId}
@@ -194,45 +194,54 @@ export function ProductForm({
         </Field>
       </div>
 
-      <div className="mt-5">
+      <div className="mt-6">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <span className="text-sm font-medium text-stone-700">
             {t('selectSizes')} <span className="text-red-600">*</span>
           </span>
-          <div className="inline-flex rounded-lg bg-stone-100 p-0.5 text-sm">
-            {(['liquid', 'dry', 'pcs'] as const).map((k) => (
+          <Segmented
+            value={kind}
+            onChange={setKind}
+            items={[
+              { value: 'liquid', label: t('liquid') },
+              { value: 'dry', label: t('dry') },
+              { value: 'pcs', label: t('pt_piece') },
+            ]}
+          />
+        </div>
+        {!editing && <p className="mb-3 text-xs text-stone-500">{t('multiSizeHint')}</p>}
+
+        {presets.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {presets.map((p) => (
               <button
-                key={k}
+                key={key(p)}
                 type="button"
-                onClick={() => setKind(k)}
-                className={cx('rounded-md px-3 py-1 cursor-pointer', kind === k ? 'bg-surface font-medium shadow-sm' : 'text-stone-600')}
+                onClick={() => toggle(p)}
+                className={cx(
+                  'num h-9 min-w-16 rounded-full px-3.5 text-sm font-medium ring-1 ring-inset transition-colors cursor-pointer',
+                  has(p) ? 'bg-primary text-white ring-primary' : 'bg-surface text-stone-700 ring-stone-300 hover:ring-brand-600',
+                )}
               >
-                {k === 'liquid' ? t('liquid') : k === 'dry' ? t('dry') : t('pt_piece')}
+                {fmtPack(p.size, p.unit, lang)}
               </button>
             ))}
           </div>
-        </div>
-        {!editing && <p className="mb-2 text-xs text-stone-500">{t('multiSizeHint')}</p>}
-        <div className="flex flex-wrap gap-2">
-          {presets.map((p) => (
-            <button
-              key={key(p)}
-              type="button"
-              onClick={() => toggle(p)}
-              className={cx(
-                'num h-9 rounded-full px-3.5 text-sm font-medium ring-1 transition-colors cursor-pointer',
-                has(p) ? 'bg-primary text-white ring-primary' : 'bg-surface text-stone-700 ring-stone-300 hover:ring-brand-600',
-              )}
-            >
-              {fmtPack(p.size, p.unit, lang)}
-            </button>
-          ))}
-        </div>
-        <div className="mt-3 flex flex-wrap items-end gap-2">
-          <Field label={t('customSize')} className="w-32">
-            <Input type="number" min="0" step="any" value={customSize} onChange={(e) => setCustomSize(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addCustom()} />
-          </Field>
-          <Select className="w-28" value={customUnit} onChange={(e) => setCustomUnit(e.target.value as PackUnit)}>
+        )}
+
+        {/* other size: one aligned row */}
+        <div className="mt-3 grid grid-cols-[minmax(0,1fr)_7rem_auto] gap-2 sm:max-w-md">
+          <Input
+            type="number"
+            min="0"
+            step="any"
+            inputMode="decimal"
+            placeholder={t('customSize')}
+            value={customSize}
+            onChange={(e) => setCustomSize(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addCustom())}
+          />
+          <Select value={customUnit} onChange={(e) => setCustomUnit(e.target.value as PackUnit)}>
             {(kind === 'liquid' ? (['ml', 'l'] as PackUnit[]) : kind === 'dry' ? (['g', 'kg'] as PackUnit[]) : (['pcs'] as PackUnit[])).map((u) => (
               <option key={u} value={u}>{fmtPack(1, u, lang).replace(/^1 /, '')}</option>
             ))}
@@ -242,63 +251,65 @@ export function ProductForm({
           </Button>
         </div>
 
+        {/* selected sizes: size, pack type, purchase rate, MRP */}
         {sizes.length > 0 && (
-          <div className="mt-4 divide-y divide-stone-100 rounded-lg border border-stone-200">
-            {sizes.map((s, i) => (
-              <div key={key(s)} className="flex flex-wrap items-end gap-x-3 gap-y-2 px-3 py-2.5">
-                <span className="num w-20 pb-2 font-semibold text-brand-800">{fmtPack(s.size, s.unit, lang)}</span>
-                <label className="block">
-                  <span className="mb-0.5 block text-xs text-stone-500">{t('purchasePrice')}</span>
-                  <Input
-                    className="h-9 w-28"
-                    type="number"
-                    min="0"
-                    step="any"
-                    inputMode="decimal"
-                    placeholder="345"
-                    value={s.purchase}
-                    onChange={(e) => setSizes((list) => list.map((x, j) => (j === i ? { ...x, purchase: e.target.value } : x)))}
-                  />
-                </label>
-                <label className="block">
-                  <span className="mb-0.5 block text-xs text-stone-500">{t('mrp')}</span>
-                  <Input
-                    className="h-9 w-28"
-                    type="number"
-                    min="0"
-                    step="any"
-                    inputMode="decimal"
-                    placeholder="500"
-                    value={s.mrp}
-                    onChange={(e) => setSizes((list) => list.map((x, j) => (j === i ? { ...x, mrp: e.target.value } : x)))}
-                  />
-                </label>
-                <Select
-                  className="h-9 w-32"
-                  value={s.type}
-                  onChange={(e) => setSizes((list) => list.map((x, j) => (j === i ? { ...x, type: e.target.value as PackType } : x)))}
-                >
-                  {PACK_TYPES.map((pt) => (
-                    <option key={pt} value={pt}>{t(`pt_${pt}`)}</option>
-                  ))}
-                </Select>
-                {!editing && (
-                  <button type="button" className="ms-auto rounded p-1 text-stone-400 hover:bg-stone-100 hover:text-red-600 cursor-pointer" onClick={() => toggle(s)} aria-label={t('remove')}>
-                    <X className="size-4" />
-                  </button>
-                )}
-              </div>
-            ))}
+          <div className="mt-4 overflow-hidden rounded-xl border border-stone-200">
+            <div className="hidden grid-cols-[5.5rem_repeat(3,minmax(0,1fr))_2.25rem] gap-3 border-b border-stone-200 bg-stone-50 px-3 py-2 text-xs font-medium text-stone-500 sm:grid">
+              <span>{t('packSize')}</span>
+              <span>{t('packType')}</span>
+              <span>{t('purchasePrice')}</span>
+              <span>{t('mrp')}</span>
+              <span />
+            </div>
+            <div className="divide-y divide-stone-100">
+              {sizes.map((s, i) => {
+                const set = (patch: Partial<SizeRow>) => setSizes((list) => list.map((x, j) => (j === i ? { ...x, ...patch } : x)))
+                return (
+                  <div key={key(s)} className="grid grid-cols-2 items-center gap-3 px-3 py-3 sm:grid-cols-[5.5rem_repeat(3,minmax(0,1fr))_2.25rem]">
+                    <span className="num col-span-2 text-base font-semibold text-brand-800 sm:col-span-1">{fmtPack(s.size, s.unit, lang)}</span>
+                    <label className="col-span-2 block sm:col-span-1">
+                      <span className="mb-1 block text-xs text-stone-500 sm:hidden">{t('packType')}</span>
+                      <Select value={s.type} onChange={(e) => set({ type: e.target.value as PackType })}>
+                        {PACK_TYPES.map((pt) => (
+                          <option key={pt} value={pt}>{t(`pt_${pt}`)}</option>
+                        ))}
+                      </Select>
+                    </label>
+                    <label className="block">
+                      <span className="mb-1 block text-xs text-stone-500 sm:hidden">{t('purchasePrice')}</span>
+                      <Input type="number" min="0" step="any" inputMode="decimal" placeholder="0" value={s.purchase} onChange={(e) => set({ purchase: e.target.value })} />
+                    </label>
+                    <label className="block">
+                      <span className="mb-1 block text-xs text-stone-500 sm:hidden">{t('mrp')}</span>
+                      <Input type="number" min="0" step="any" inputMode="decimal" placeholder="0" value={s.mrp} onChange={(e) => set({ mrp: e.target.value })} />
+                    </label>
+                    {!editing ? (
+                      <button
+                        type="button"
+                        className="col-span-2 grid size-9 place-items-center justify-self-end rounded-lg text-stone-400 hover:bg-red-50 hover:text-red-600 sm:col-span-1 cursor-pointer"
+                        onClick={() => toggle(s)}
+                        aria-label={t('remove')}
+                        title={t('remove')}
+                      >
+                        <X className="size-4" />
+                      </button>
+                    ) : (
+                      <span className="hidden sm:block" />
+                    )}
+                  </div>
+                )
+              })}
+            </div>
           </div>
         )}
       </div>
 
-      <div className="mt-5 grid gap-4 sm:grid-cols-2">
+      <div className="mt-6 grid gap-4 sm:grid-cols-2">
         <Field label={t('minStock')} hint={t('minStockHint')}>
-          <Input type="number" min="0" step="any" value={minStock} onChange={(e) => setMinStock(e.target.value)} />
+          <Input type="number" min="0" step="any" inputMode="decimal" value={minStock} onChange={(e) => setMinStock(e.target.value)} />
         </Field>
-        <Field label={t('note')} hint={t('optional')}>
-          <Textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
+        <Field label={t('note')} optional>
+          <Input value={notes} onChange={(e) => setNotes(e.target.value)} />
         </Field>
       </div>
 

@@ -73,16 +73,16 @@ export function PartyForm({
         <Field label={t('name')} required>
           <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={kind === 'customer' ? 'Muhammad Aslam' : 'Ali Akbar Group'} />
         </Field>
-        <Field label={t('phone')} hint={t('optional')}>
+        <Field label={t('phone')} optional>
           <Input value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" dir="ltr" placeholder="0300-1234567" />
         </Field>
-        <Field label={t('address')} hint={t('optional')}>
+        <Field label={t('address')} optional>
           <Input value={address} onChange={(e) => setAddress(e.target.value)} />
         </Field>
         <Field label={t('openingBalance')} hint={kind === 'customer' ? t('openingHintCustomer') : t('openingHintSupplier')}>
           <Input type="number" step="any" inputMode="decimal" value={opening} onChange={(e) => setOpening(e.target.value)} placeholder="0" />
         </Field>
-        <Field label={t('note')} hint={t('optional')}>
+        <Field label={t('note')} optional>
           <Textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
         </Field>
         {error && <ErrorBox>{error}</ErrorBox>}

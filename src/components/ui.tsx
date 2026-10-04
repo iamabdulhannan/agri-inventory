@@ -30,9 +30,9 @@ export function Button({
         'inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-colors cursor-pointer',
         'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600',
         'disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap',
-        size === 'sm' && 'h-8 px-3 text-sm',
+        size === 'sm' && 'h-8 px-3 text-[13px]',
         size === 'md' && 'h-10 px-4 text-sm',
-        size === 'lg' && 'h-12 px-5 text-base',
+        size === 'lg' && 'h-11 px-5 text-[15px] font-semibold',
         VARIANTS[variant],
         className,
       )}
@@ -80,13 +80,16 @@ export function Textarea({ className, ...rest }: TextareaHTMLAttributes<HTMLText
 export { Select } from './Select'
 
 export function Field({
-  label, hint, error, children, className, required,
-}: { label: ReactNode; hint?: ReactNode; error?: ReactNode; children: ReactNode; className?: string; required?: boolean }) {
+  label, hint, error, children, className, required, optional,
+}: { label: ReactNode; hint?: ReactNode; error?: ReactNode; children: ReactNode; className?: string; required?: boolean; optional?: boolean }) {
+  const { t } = useI18n()
   return (
-    <label className={cx('block', className)}>
-      <span className="mb-1 block text-sm font-medium text-stone-700">
-        {label}
-        {required && <span className="text-red-600"> *</span>}
+    <label className={cx('block min-w-0', className)}>
+      {/* one line, so inputs in the same row always line up */}
+      <span className="mb-1.5 flex items-baseline gap-1 overflow-hidden whitespace-nowrap text-sm font-medium text-stone-700">
+        <span className="truncate">{label}</span>
+        {required && <span className="text-red-600">*</span>}
+        {optional && <span className="truncate text-xs font-normal text-stone-400">({t('optional')})</span>}
       </span>
       {children}
       {hint && !error && <span className="mt-1 block text-xs text-stone-500">{hint}</span>}
@@ -190,6 +193,35 @@ export function Tabs<T extends string>({ value, onChange, items }: { value: T; o
           {it.label}
         </button>
       ))}
+    </div>
+  )
+}
+
+/** Pill toggle for small either/or choices (same look everywhere) */
+export function Segmented<T extends string>({
+  value, onChange, items, className, size = 'md',
+}: { value: T | ''; onChange: (v: T) => void; items: { value: T; label: ReactNode; tone?: 'brand' | 'amber' }[]; className?: string; size?: 'sm' | 'md' }) {
+  return (
+    <div className={cx('inline-flex rounded-lg bg-stone-100 p-1 ring-1 ring-inset ring-stone-200', className)} role="radiogroup">
+      {items.map((it) => {
+        const on = it.value === value
+        return (
+          <button
+            key={it.value}
+            type="button"
+            role="radio"
+            aria-checked={on}
+            onClick={() => onChange(it.value)}
+            className={cx(
+              'rounded-md px-3 font-medium whitespace-nowrap transition-colors cursor-pointer',
+              size === 'sm' ? 'h-7 text-xs' : 'h-8 text-sm',
+              on ? cx('bg-surface shadow-sm ring-1 ring-stone-200', it.tone === 'amber' ? 'text-amber-800' : 'text-brand-800') : 'text-stone-600 hover:text-stone-900',
+            )}
+          >
+            {it.label}
+          </button>
+        )
+      })}
     </div>
   )
 }

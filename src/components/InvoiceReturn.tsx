@@ -11,7 +11,7 @@ import { supabase } from '../lib/supabase'
 import type { Sale } from '../lib/types'
 import { fmtNum } from '../lib/units'
 import { ProductName } from './domain'
-import { Badge, Button, Card, ErrorBox, Field, Input, useFeedback } from './ui'
+import { Badge, Button, Card, ErrorBox, Field, Input, useFeedback, Segmented } from './ui'
 
 interface Returnable {
   batch_id: string
@@ -233,10 +233,12 @@ export function InvoiceReturn({
                 <Field label={t('refundNow')} hint={t('refundHintKhata')}>
                   <Input type="number" min="0" step="any" inputMode="decimal" placeholder="0" value={refund} onChange={(e) => setRefund(e.target.value)} />
                 </Field>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <Button size="sm" variant={refundNum === 0 ? 'primary' : 'secondary'} onClick={() => setRefund('0')}>{t('creditToKhata')}</Button>
-                  <Button size="sm" variant={refundNum === value && value > 0 ? 'warning' : 'secondary'} onClick={() => setRefund(String(value))}>{t('refundCash')}</Button>
-                </div>
+                <Segmented
+                  className="mt-2"
+                  value={refundNum === 0 ? 'credit' : refundNum === value && value > 0 ? 'refund' : ''}
+                  onChange={(v) => setRefund(v === 'credit' ? '0' : String(value))}
+                  items={[{ value: 'credit', label: t('creditToKhata') }, { value: 'refund', label: t('refundCash'), tone: 'amber' }]}
+                />
               </div>
             ) : (
               <div className="rounded-lg bg-stone-50 p-3">
@@ -253,7 +255,7 @@ export function InvoiceReturn({
               </div>
             )}
           </div>
-          <Field label={t('note')} hint={t('optional')} className="mt-3">
+          <Field label={t('note')} optional className="mt-3">
             <Input value={note} onChange={(e) => setNote(e.target.value)} />
           </Field>
           {error && <div className="mt-3"><ErrorBox>{error}</ErrorBox></div>}

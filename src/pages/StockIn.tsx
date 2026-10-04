@@ -1,11 +1,11 @@
-import { ArrowDownToLine, Check, Plus, X } from 'lucide-react'
+import { ArrowDownToLine, Check, FileSpreadsheet, Plus, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ProductPicker } from '../components/domain'
 import { ProductForm } from '../components/ProductForm'
 import { PartyPicker } from '../components/PartyPicker'
 import { InvoiceReturn } from '../components/InvoiceReturn'
-import { Button, Card, ErrorBox, Field, Input, Loading, PageHeader, Select, useFeedback } from '../components/ui'
+import { Button, Card, ErrorBox, Field, Input, Loading, PageHeader, Select, useFeedback, Segmented } from '../components/ui'
 import { cx } from '../lib/cx'
 import { useOrg } from '../lib/app'
 import { loadCatalog } from '../lib/catalog'
@@ -37,6 +37,7 @@ export function StockIn() {
   const { org, today, refresh, version } = useOrg()
   const { toast } = useFeedback()
   const [params] = useSearchParams()
+  const nav = useNavigate()
 
   const { data, loading, error, reload } = useLoad(async () => {
     const [catalog, batches, suppliers] = await Promise.all([
@@ -48,7 +49,7 @@ export function StockIn() {
   }, [org.id, version])
 
   const [date, setDate] = useState(today)
-  const [type, setType] = useState<MovementType>(params.get('type') === 'return_in' ? 'return_in' : 'purchase')
+  const [type, setType] = useState<MovementType | 'opening'>(params.get('type') === 'return_in' ? 'return_in' : 'purchase')
   const [invLoaded, setInvLoaded] = useState(false)
   const [party, setParty] = useState('')
   const [partyId, setPartyId] = useState('')
@@ -110,7 +111,7 @@ export function StockIn() {
     const { data: n, error } = await supabase.rpc('record_stock_in', {
       p_org: org.id,
       p_date: date,
-      p_type: type,
+      p_type: type === 'opening' ? 'purchase' : type,
       p_lines: lines.map((l) => ({
         product_id: l.product_id,
         batch_no: l.batch_no.trim() || null,
@@ -124,6 +125,7 @@ export function StockIn() {
       p_note: note || null,
       p_party_id: isPurchase && partyId ? partyId : null,
       p_paid: isPurchase ? paidNum : null,
+      p_opening: type === 'opening',
     })
     setBusy(false)
     if (error) return setErr(errText(error, t))
@@ -144,13 +146,17 @@ export function StockIn() {
 
   return (
     <div className="mx-auto max-w-4xl">
-      <PageHeader title={<span className="flex items-center gap-2"><ArrowDownToLine className="size-6 text-brand-700" /> {t('stockInTitle')}</span>} />
+      <PageHeader
+        title={<span className="flex items-center gap-2"><ArrowDownToLine className="size-6 text-brand-700" /> {t('stockInTitle')}</span>}
+        actions={<Button variant="secondary" onClick={() => nav('/stock-in/import')}><FileSpreadsheet className="size-4" /> {t('bulkImport')}</Button>}
+      />
 
       <Card className="p-4">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Field label={t('entryType')}>
-            <Select value={type} onChange={(e) => { setType(e.target.value as MovementType); setInvLoaded(false) }}>
+            <Select value={type} onChange={(e) => { setType(e.target.value as MovementType | 'opening'); setInvLoaded(false) }}>
               <option value="purchase">{t('mv_purchase')}</option>
+              <option value="opening">{t('openingStock')}</option>
               <option value="return_in">{t('mv_return_in')}</option>
             </Select>
           </Field>
@@ -158,7 +164,7 @@ export function StockIn() {
             <Input type="date" value={date} max={today} onChange={(e) => setDate(e.target.value)} />
           </Field>
           {isPurchase ? (
-            <Field label={`${t('supplier')} (${t('khataAccount')})`}>
+            <Field label={t('supplier')}>
               <PartyPicker
                 kind="supplier"
                 parties={data.suppliers}
@@ -174,18 +180,20 @@ export function StockIn() {
                 noneLabel={t('noKhata')}
               />
             </Field>
+          ) : type === 'opening' ? (
+            <p className="self-end pb-2 text-xs text-stone-500">{t('openingStockHint')}</p>
           ) : invLoaded ? null : (
-            <Field label={t('customer')} hint={t('optional')}>
+            <Field label={t('customer')} optional>
               <Input value={party} onChange={(e) => setParty(e.target.value)} />
             </Field>
           )}
           {isPurchase && !partyId && (
-            <Field label={t('supplier')} hint={t('optional')}>
+            <Field label={t('supplier')} optional>
               <Input value={party} onChange={(e) => setParty(e.target.value)} />
             </Field>
           )}
           {!invLoaded && (
-            <Field label={t('invoiceNo')} hint={isPurchase ? undefined : t('optional')}>
+            <Field label={t('invoiceNo')} optional={!isPurchase}>
               <Input value={reference} onChange={(e) => setReference(e.target.value)} />
             </Field>
           )}
@@ -242,7 +250,7 @@ export function StockIn() {
                     }}
                   />
                 </Field>
-                <Field label={t('mfgDate')} hint={t('optional')}>
+                <Field label={t('mfgDate')} optional>
                   <Input type="date" value={l.mfg_date} onChange={(e) => set(l.key, { mfg_date: e.target.value })} disabled={!!known} />
                 </Field>
                 <Field
@@ -286,10 +294,12 @@ export function StockIn() {
                 <Input type="number" min="0" step="any" inputMode="decimal" placeholder={partyId ? '0' : String(total)} value={paid} onChange={(e) => setPaid(e.target.value)} />
               </Field>
               {partyId && (
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <Button size="sm" variant={paidNum === total ? 'primary' : 'secondary'} onClick={() => setPaid(String(total))}>{t('fullPayment')}</Button>
-                  <Button size="sm" variant={paidNum === 0 ? 'warning' : 'secondary'} onClick={() => setPaid('0')}>{t('onCredit')}</Button>
-                </div>
+                <Segmented
+                  className="mt-2"
+                  value={paidNum === total ? 'full' : paidNum === 0 ? 'credit' : ''}
+                  onChange={(v) => setPaid(v === 'full' ? String(total) : '0')}
+                  items={[{ value: 'full', label: t('fullPayment') }, { value: 'credit', label: t('onCredit'), tone: 'amber' }]}
+                />
               )}
             </div>
             <div className={cx('rounded-lg p-3', due > 0 ? 'bg-amber-50' : 'bg-stone-50')}>
@@ -299,7 +309,7 @@ export function StockIn() {
             </div>
           </div>
         )}
-        <Field label={t('note')} hint={t('optional')}>
+        <Field label={t('note')} optional>
           <Input value={note} onChange={(e) => setNote(e.target.value)} />
         </Field>
         {err && <div className="mt-3"><ErrorBox>{err}</ErrorBox></div>}

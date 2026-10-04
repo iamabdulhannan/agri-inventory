@@ -317,7 +317,7 @@ function PaymentModal({ open, onClose, party, onSaved }: { open: boolean; onClos
         <Field label={t('date')}>
           <Input type="date" value={date} max={today} onChange={(e) => setDate(e.target.value)} />
         </Field>
-        <Field label={t('note')} hint={t('optional')}>
+        <Field label={t('note')} optional>
           <Input value={note} onChange={(e) => setNote(e.target.value)} />
         </Field>
         {Number(amount) > 0 && (

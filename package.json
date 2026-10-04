@@ -6,25 +6,28 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test:db": "node supabase/tests/schema.test.mjs && node supabase/tests/password.test.mjs && node supabase/tests/members.test.mjs && node supabase/tests/sales.test.mjs && node supabase/tests/returns.test.mjs"
+    "test:db": "node supabase/tests/schema.test.mjs && node supabase/tests/password.test.mjs && node supabase/tests/members.test.mjs && node supabase/tests/sales.test.mjs && node supabase/tests/returns.test.mjs && node supabase/tests/opening.test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.117.2",
     "lucide-react": "^1.51.0",
+    "papaparse": "^5.7.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "react-router-dom": "^7.18.4"
+    "react-router-dom": "^7.18.4",
+    "read-excel-file": "^9.3.10"
   },
   "description": "Inventory & expiry management for agricultural medicines, fertilizers and seeds",
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
     "@tailwindcss/vite": "^4.3.3",
+    "@types/papaparse": "^5.5.2",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.1",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
-    "vite": "^8.3.2",
-    "@electric-sql/pglite": "^0.5.8"
+    "vite": "^8.3.2"
   },
   "private": true,
   "type": "module"

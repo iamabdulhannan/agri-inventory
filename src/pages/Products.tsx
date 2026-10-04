@@ -33,7 +33,7 @@ export function Products() {
       if (!showInactive && !p.is_active) return false
       if (category !== 'all' && p.category_id !== category) return false
       if (!terms.length) return true
-      const hay = `${p.name} ${p.name_ur ?? ''} ${p.company_name ?? ''} ${fmtPack(p.pack_size, p.pack_unit)} ${p.category_name}`.toLowerCase()
+      const hay = `${p.name} ${p.name_ur ?? ''} ${p.company_name ?? ''} ${fmtPack(p.pack_size, p.pack_unit)} ${p.category_name} ${p.notes ?? ''}`.toLowerCase()
       return terms.every((x) => hay.includes(x))
     })
   }, [cat, q, category, showInactive])

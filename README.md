@@ -36,6 +36,7 @@ React + Vite + Tailwind on the front end, Supabase (Postgres + Auth) on the back
    4. `supabase/migrations/004_remove_member.sql`: removing a member deletes their account and signs them out (stock history keeps their name)
    5. `supabase/migrations/005_sales_khata.sql`: prices, sales invoices and receipts, purchases, khata (customer and supplier ledgers), roznamcha and profit
    6. `supabase/migrations/006_sale_returns.sql`: customer returns against a sale invoice (credit to khata or cash refund)
+   7. `supabase/migrations/007_opening_stock.sql`: opening stock (no cash or khata entry), used by single and bulk stock-in
 3. Under **Authentication → URL Configuration**:
    - Set **Site URL** to your app URL (`http://localhost:5173` while developing).
    - Add `http://localhost:5173/**` and your production URL `/**` to **Redirect URLs**.
@@ -78,6 +79,16 @@ When Gmail or other SMTP is configured, set `VITE_EMAILS_ENABLED=true` to turn t
 - **Roznamcha:** daily cash book showing opening cash, every cash in and out (sales, purchases, khata payments, expenses, cash in/out) and closing cash. There is also a month view.
 - **Invoices:** every sale and purchase. Reprint receipts here; admins can void an invoice, which returns its stock and removes its khata and roznamcha entries.
 - **Optional test prices:** `supabase/seed/sample_prices.sql` fills in rough prices for products that have none.
+
+## Bulk stock in (Excel / CSV)
+
+Go to **Stock In → Bulk import (Excel / CSV)**.
+1. Download **Template with my products**. It has one row per product, with name, company, pack size and purchase rate already filled. There is also a blank template.
+2. For each batch you have, fill in **Batch no, Expiry date, Quantity** (and Mfg date if you like). Leave products you don't have empty. Save as **.xlsx** or **.csv**.
+3. Upload the file and check the preview. Rows with problems (missing expiry, unknown size, conflicting batch and so on) are shown in red and skipped. Products that aren't in your list yet are created automatically (you can turn this off).
+4. Choose **Opening stock** (no cash or khata entry) or **Purchase** (supplier, invoice, paid now), then click **Save**.
+
+Dates can be Excel dates, 30/06/2028, 2028-06-30, 30-Jun-2028, or 06/2028 (end of month).
 
 ## Daily use
 

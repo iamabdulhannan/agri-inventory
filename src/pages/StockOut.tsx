@@ -4,7 +4,7 @@ import { useSearchParams } from 'react-router-dom'
 import { ProductPicker } from '../components/domain'
 import { PartyPicker } from '../components/PartyPicker'
 import { ReceiptModal } from '../components/Receipt'
-import { Button, Card, ErrorBox, Field, Input, Loading, PageHeader, Select, useFeedback } from '../components/ui'
+import { Button, Card, ErrorBox, Field, Input, Loading, PageHeader, Select, useFeedback, Segmented } from '../components/ui'
 import { useOrg } from '../lib/app'
 import { loadCatalog } from '../lib/catalog'
 import { cx } from '../lib/cx'
@@ -176,7 +176,7 @@ export function StockOut() {
           </Field>
           {isSale ? (
             <>
-              <Field label={`${t('customer')} (${t('khataAccount')})`}>
+              <Field label={t('customer')}>
                 <PartyPicker
                   kind="customer"
                   parties={data.customers}
@@ -199,17 +199,17 @@ export function StockOut() {
                   <div className="num font-semibold">{fmtMoney(customer?.balance ?? 0, lang)}</div>
                 </div>
               ) : (
-                <Field label={t('customerName')} hint={t('optional')}>
+                <Field label={t('customerName')} optional>
                   <Input value={party} onChange={(e) => setParty(e.target.value)} />
                 </Field>
               )}
             </>
           ) : (
             <>
-              <Field label={type === 'return_out' ? t('supplier') : t('party')} hint={t('optional')}>
+              <Field label={type === 'return_out' ? t('supplier') : t('party')} optional>
                 <Input value={party} onChange={(e) => setParty(e.target.value)} />
               </Field>
-              <Field label={t('invoiceNo')} hint={t('optional')}>
+              <Field label={t('invoiceNo')} optional>
                 <Input value={reference} onChange={(e) => setReference(e.target.value)} />
               </Field>
             </>
@@ -330,7 +330,7 @@ export function StockOut() {
                 <div className="text-sm text-stone-500">{t('subtotal')}</div>
                 <div className="num text-lg font-semibold">{fmtMoney(subtotal, lang)}</div>
               </div>
-              <Field label={t('discount')} hint={t('optional')}>
+              <Field label={t('discount')} optional>
                 <Input type="number" min="0" step="any" inputMode="decimal" placeholder="0" value={discount} onChange={(e) => setDiscount(e.target.value)} />
               </Field>
               <div className="rounded-lg bg-brand-50 p-3">
@@ -344,10 +344,12 @@ export function StockOut() {
                   <Input type="number" min="0" step="any" inputMode="decimal" placeholder={partyId ? '0' : String(total)} value={received} onChange={(e) => setReceived(e.target.value)} />
                 </Field>
                 {partyId && total > 0 && (
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    <Button size="sm" variant={paidNum === total ? 'primary' : 'secondary'} onClick={() => setReceived(String(total))}>{t('fullPayment')}</Button>
-                    <Button size="sm" variant={paidNum === 0 ? 'warning' : 'secondary'} onClick={() => setReceived('0')}>{t('onCredit')}</Button>
-                  </div>
+                  <Segmented
+                    className="mt-2"
+                    value={paidNum === total ? 'full' : paidNum === 0 ? 'credit' : ''}
+                    onChange={(v) => setReceived(v === 'full' ? String(total) : '0')}
+                    items={[{ value: 'full', label: t('fullPayment') }, { value: 'credit', label: t('onCredit'), tone: 'amber' }]}
+                  />
                 )}
               </div>
               <div className={cx('rounded-lg p-3 sm:col-span-2', due > 0 ? 'bg-amber-50' : 'bg-stone-50')}>
@@ -361,7 +363,7 @@ export function StockOut() {
             </div>
           </div>
         )}
-        <Field label={t('note')} hint={t('optional')}>
+        <Field label={t('note')} optional>
           <Input value={note} onChange={(e) => setNote(e.target.value)} />
         </Field>
         {err && <div className="mt-3"><ErrorBox>{err}</ErrorBox></div>}
