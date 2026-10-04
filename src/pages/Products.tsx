@@ -11,9 +11,10 @@ import { downloadCsv } from '../lib/csv'
 import { errText } from '../lib/errors'
 import { useI18n } from '../lib/i18n'
 import { fmtPack, fmtTotal } from '../lib/units'
+import { fmtMoney } from '../lib/money'
 
 export function Products() {
-  const { t, pick } = useI18n()
+  const { t, pick, lang } = useI18n()
   const { refresh, today } = useOrg()
   const { toast } = useFeedback()
   const nav = useNavigate()
@@ -42,8 +43,8 @@ export function Products() {
   if (!cat) return null
 
   const exportCsv = () =>
-    downloadCsv(`products-${today}`, [t('productName'), t('urduName'), t('company'), t('category'), t('packSize'), t('packType'), t('stock'), t('total'), t('minStock'), t('nextExpiry')],
-      list.map((p) => [p.name, p.name_ur, p.company_name, p.category_name, fmtPack(p.pack_size, p.pack_unit), t(`pt_${p.pack_type}`), p.qty, fmtTotal(p.qty, p.pack_size, p.pack_unit), p.min_stock, p.next_expiry]))
+    downloadCsv(`products-${today}`, [t('productName'), t('urduName'), t('company'), t('category'), t('packSize'), t('packType'), t('stock'), t('total'), t('purchasePrice'), t('mrp'), t('stockValue'), t('minStock'), t('nextExpiry')],
+      list.map((p) => [p.name, p.name_ur, p.company_name, p.category_name, fmtPack(p.pack_size, p.pack_unit), t(`pt_${p.pack_type}`), p.qty, fmtTotal(p.qty, p.pack_size, p.pack_unit), p.purchase_price, p.sale_price, p.stock_value, p.min_stock, p.next_expiry]))
 
   return (
     <div>
@@ -98,6 +99,7 @@ export function Products() {
                     <th>{t('category')}</th>
                     <th>{t('packSize')}</th>
                     <th className="r">{t('stock')}</th>
+                    <th className="r">{t('mrp')}</th>
                     <th>{t('nextExpiry')}</th>
                     <th>{t('status')}</th>
                   </tr>
@@ -112,6 +114,10 @@ export function Products() {
                       <td className="text-stone-600">{pick(p.category_name, p.category_name_ur)}</td>
                       <td className="num font-medium text-brand-800">{label(p)}</td>
                       <td className="r"><QtyCell packs={p.qty} p={p} strong /></td>
+                      <td className="r num whitespace-nowrap">
+                        {p.sale_price ? <span className="font-medium">{fmtMoney(p.sale_price, lang)}</span> : <span className="text-stone-300">—</span>}
+                        {Number(p.purchase_price) > 0 && <div className="text-xs text-stone-500">{t('purchasePrice')}: {fmtMoney(p.purchase_price, lang)}</div>}
+                      </td>
                       <td><ExpiryBadge date={p.next_expiry} /></td>
                       <td>
                         {!p.is_active ? <Badge>{t('inactive')}</Badge> : p.min_stock > 0 && p.qty <= p.min_stock ? <Badge tone="red">{t('lowStock')}</Badge> : null}

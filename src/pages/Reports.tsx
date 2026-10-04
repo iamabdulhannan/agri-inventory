@@ -13,11 +13,12 @@ import { errText } from '../lib/errors'
 import { addDays, fmtDate, fmtMonth, monthOf, monthRange, weekday } from '../lib/format'
 import { useI18n } from '../lib/i18n'
 import { supabase } from '../lib/supabase'
-import type { ProductStock, RegisterRow, SummaryRow } from '../lib/types'
+import type { ProductSalesRow, ProductStock, RegisterRow, SalesDay, SummaryRow } from '../lib/types'
+import { fmtMoney } from '../lib/money'
 import { baseOf, fmtBase, fmtNum, fmtPack, fmtTotal, measureOf } from '../lib/units'
 import { ExpiryView } from './Expiry'
 
-type Tab = 'daily' | 'monthly' | 'register' | 'stock' | 'expiry'
+type Tab = 'profit' | 'daily' | 'monthly' | 'register' | 'stock' | 'expiry'
 
 const num = (r: SummaryRow) => ({
   ...r,
@@ -48,6 +49,7 @@ export function Reports() {
         value={tab}
         onChange={setTab}
         items={[
+          { value: 'profit', label: t('salesProfit') },
           { value: 'daily', label: t('daily') },
           { value: 'monthly', label: t('monthly') },
           { value: 'register', label: t('dayByDay') },
@@ -55,6 +57,7 @@ export function Reports() {
           { value: 'expiry', label: t('expiryReport') },
         ]}
       />
+      {tab === 'profit' && <ProfitReport />}
       {tab === 'daily' && <DailyReport />}
       {tab === 'monthly' && <MonthlyReport />}
       {tab === 'register' && <RegisterReport />}
@@ -514,6 +517,159 @@ function StockReport() {
             </div>
           )}
         </Card>
+      )}
+    </div>
+  )
+}
+
+// ------------------------------------------------------------------ Sales & profit
+function ProfitReport() {
+  const { t, lang, pick } = useI18n()
+  const { org, today, version } = useOrg()
+  const label = usePackLabel()
+  const [, setParams] = useSearchParams()
+  const [month, setMonth] = useState(monthOf(today))
+  const [from, lastDay] = monthRange(month)
+  const to = lastDay > today ? today : lastDay
+
+  const { data, error, loading, reload } = useLoad(async () => {
+    if (from > today) return null
+    const [catalog, days, prods] = await Promise.all([
+      loadCatalog(org.id),
+      supabase.rpc('sales_days', { p_org: org.id, p_from: from, p_to: to }),
+      supabase.rpc('product_sales', { p_org: org.id, p_from: from, p_to: to }),
+    ])
+    if (days.error) throw days.error
+    if (prods.error) throw prods.error
+    return { catalog, days: (days.data ?? []) as SalesDay[], prods: ((prods.data ?? []) as ProductSalesRow[]).sort((a, b) => Number(b.profit) - Number(a.profit)) }
+  }, [org.id, from, to, version])
+
+  const tot = (data?.days ?? []).reduce(
+    (a, d) => ({ inv: a.inv + Number(d.invoices), sales: a.sales + Number(d.sales), disc: a.disc + Number(d.discount), cost: a.cost + Number(d.cost), profit: a.profit + Number(d.profit), rec: a.rec + Number(d.received) }),
+    { inv: 0, sales: 0, disc: 0, cost: 0, profit: 0, rec: 0 },
+  )
+  const pct = (p: number, s: number) => (s ? `${Math.round((p / s) * 100)}%` : '—')
+
+  const exportCsv = () => {
+    if (!data) return
+    downloadCsv(`sales-profit-${month}`, [t('date'), t('invoices'), t('sales_'), t('discount'), t('cost'), t('profit'), t('margin'), t('received')],
+      data.days.map((d) => [d.day, d.invoices, d.sales, d.discount, d.cost, d.profit, pct(Number(d.profit), Number(d.sales)), d.received]))
+  }
+
+  return (
+    <div className="space-y-4">
+      <Toolbar onExcel={data ? exportCsv : undefined}>
+        <Field label={t('month')}>
+          <Input type="month" className="w-44" value={month} max={monthOf(today)} onChange={(e) => e.target.value && setMonth(e.target.value)} />
+        </Field>
+      </Toolbar>
+      <PrintHeader title={t('salesProfit')} subtitle={fmtMonth(month, lang)} />
+
+      {loading && !data ? <Loading /> : error ? <ErrorBox onRetry={reload}>{errText(error, t)}</ErrorBox> : !data ? <Empty>{t('noData')}</Empty> : (
+        <>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {[
+              { l: t('sales_'), v: fmtMoney(tot.sales, lang), s: `${tot.inv} ${t('invoices')}` },
+              { l: t('cost'), v: fmtMoney(tot.cost, lang) },
+              { l: t('profit'), v: fmtMoney(tot.profit, lang), s: `${t('margin')} ${pct(tot.profit, tot.sales)}`, good: true },
+              { l: t('received'), v: fmtMoney(tot.rec, lang), s: `${t('balanceDue')}: ${fmtMoney(tot.sales - tot.rec, lang)}` },
+            ].map((k) => (
+              <div key={k.l} className={cx('rounded-xl border p-4', k.good ? 'border-brand-200 bg-brand-50' : 'border-stone-200 bg-surface')}>
+                <div className="text-sm text-stone-500">{k.l}</div>
+                <div className={cx('num mt-1 text-xl font-bold', k.good && 'text-brand-800')}>{k.v}</div>
+                {k.s && <div className="num text-xs text-stone-500">{k.s}</div>}
+              </div>
+            ))}
+          </div>
+
+          <Card className="print-plain" title={`${t('dailyTotals')} · ${fmtMonth(month, lang)}`}>
+            {data.days.length === 0 ? <Empty>{t('noEntries')}</Empty> : (
+              <div className="table-wrap">
+                <table className="tbl">
+                  <thead>
+                    <tr>
+                      <th>{t('date')}</th>
+                      <th className="r">{t('invoices')}</th>
+                      <th className="r">{t('sales_')}</th>
+                      <th className="r">{t('discount')}</th>
+                      <th className="r">{t('cost')}</th>
+                      <th className="r">{t('profit')}</th>
+                      <th className="r">{t('margin')}</th>
+                      <th className="r">{t('received')}</th>
+                      <th className="no-print" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.days.map((d) => (
+                      <tr key={d.day}>
+                        <td className="num whitespace-nowrap">{fmtDate(d.day, lang)} <span className="text-xs text-stone-400">{weekday(d.day, lang)}</span></td>
+                        <td className="r num">{d.invoices}</td>
+                        <td className="r num font-medium">{fmtMoney(d.sales, lang)}</td>
+                        <td className="r num text-stone-500">{Number(d.discount) ? fmtMoney(d.discount, lang) : ''}</td>
+                        <td className="r num">{fmtMoney(d.cost, lang)}</td>
+                        <td className={cx('r num font-semibold', Number(d.profit) < 0 ? 'text-red-700' : 'text-brand-700')}>{fmtMoney(d.profit, lang)}</td>
+                        <td className="r num">{pct(Number(d.profit), Number(d.sales))}</td>
+                        <td className="r num">{fmtMoney(d.received, lang)}</td>
+                        <td className="no-print r"><Button size="sm" variant="ghost" onClick={() => setParams({ tab: 'daily', date: d.day.slice(0, 10) })}>{t('openDay')}</Button></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td>{t('total')}</td>
+                      <td className="r num">{tot.inv}</td>
+                      <td className="r num">{fmtMoney(tot.sales, lang)}</td>
+                      <td className="r num">{fmtMoney(tot.disc, lang)}</td>
+                      <td className="r num">{fmtMoney(tot.cost, lang)}</td>
+                      <td className="r num">{fmtMoney(tot.profit, lang)}</td>
+                      <td className="r num">{pct(tot.profit, tot.sales)}</td>
+                      <td className="r num">{fmtMoney(tot.rec, lang)}</td>
+                      <td className="no-print" />
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+          </Card>
+
+          <Card className="print-plain" title={t('productsByProfit')}>
+            {data.prods.length === 0 ? <Empty>{t('noEntries')}</Empty> : (
+              <div className="table-wrap">
+                <table className="tbl">
+                  <thead>
+                    <tr>
+                      <th>{t('product')}</th>
+                      <th>{t('packSize')}</th>
+                      <th className="r">{t('sold')}</th>
+                      <th className="r">{t('sales_')}</th>
+                      <th className="r">{t('cost')}</th>
+                      <th className="r">{t('profit')}</th>
+                      <th className="r">{t('margin')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.prods.map((r) => {
+                      const p = data.catalog.byId.get(r.product_id)
+                      if (!p) return null
+                      return (
+                        <tr key={r.product_id}>
+                          <td><div className="font-medium">{pick(p.name, p.name_ur)}</div>{p.company_name && <div className="text-xs text-stone-500">{p.company_name}</div>}</td>
+                          <td className="num whitespace-nowrap text-brand-800">{label(p)}</td>
+                          <td className="r num">{fmtNum(Number(r.qty), 3)}</td>
+                          <td className="r num">{fmtMoney(r.revenue, lang)}</td>
+                          <td className="r num">{fmtMoney(r.cost, lang)}</td>
+                          <td className={cx('r num font-semibold', Number(r.profit) < 0 ? 'text-red-700' : 'text-brand-700')}>{fmtMoney(r.profit, lang)}</td>
+                          <td className="r num">{pct(Number(r.profit), Number(r.revenue))}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <p className="px-4 py-2 text-xs text-stone-500">{t('unpricedNote')}</p>
+          </Card>
+        </>
       )}
     </div>
   )

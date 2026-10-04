@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowDownToLine, ArrowUpFromLine, BarChart3, CheckCircle2, Droplets, Package, PackagePlus, TrendingDown, Weight } from 'lucide-react'
+import { AlertTriangle, ArrowDownToLine, ArrowUpFromLine, BarChart3, BookUser, CheckCircle2, Coins, Droplets, HandCoins, Landmark, Package, TrendingDown, TrendingUp, Wallet, Weight } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { ExpiryTable } from '../components/ExpiryTable'
@@ -12,7 +12,8 @@ import { errText } from '../lib/errors'
 import { fmtDate, fmtDateTime } from '../lib/format'
 import { useI18n } from '../lib/i18n'
 import { supabase } from '../lib/supabase'
-import { authorOf, type ExpiryAlert, type Movement } from '../lib/types'
+import { authorOf, type ExpiryAlert, type MoneySummary, type Movement } from '../lib/types'
+import { fmtMoney } from '../lib/money'
 import { fmtBase, fmtNum, totalsByMeasure } from '../lib/units'
 
 export function Dashboard() {
@@ -21,7 +22,7 @@ export function Dashboard() {
   const nav = useNavigate()
 
   const { data, error, loading, reload } = useLoad(async () => {
-    const [catalog, alerts, todayMv, recent] = await Promise.all([
+    const [catalog, alerts, todayMv, recent, money] = await Promise.all([
       loadCatalog(org.id),
       supabase.from('expiry_alerts').select('*').eq('org_id', org.id).order('expiry_date').limit(500),
       supabase.from('stock_movements').select('qty').eq('org_id', org.id).eq('movement_date', today).limit(5000),
@@ -31,6 +32,7 @@ export function Dashboard() {
         .eq('org_id', org.id)
         .order('created_at', { ascending: false })
         .limit(10),
+      supabase.rpc('money_summary', { p_org: org.id, p_today: today }),
     ])
     for (const r of [alerts, todayMv, recent]) if (r.error) throw r.error
     return {
@@ -38,6 +40,8 @@ export function Dashboard() {
       alerts: (alerts.data ?? []) as ExpiryAlert[],
       todayMv: (todayMv.data ?? []) as { qty: number }[],
       recent: (recent.data ?? []) as Movement[],
+      // money figures need migration 005; the dashboard still works without it
+      money: money.error ? null : ((money.data as MoneySummary[])?.[0] ?? null),
     }
   }, [org.id, version, today])
 
@@ -45,7 +49,7 @@ export function Dashboard() {
   if (error) return <ErrorBox onRetry={reload}>{errText(error, t)}</ErrorBox>
   if (!data) return null
 
-  const { catalog, alerts, todayMv, recent } = data
+  const { catalog, alerts, todayMv, recent, money } = data
   const active = catalog.products.filter((p) => p.is_active)
   const totals = totalsByMeasure(active, (p) => ({ packs: Math.max(0, p.qty), size: p.pack_size, unit: p.pack_unit }))
   const low = active.filter((p) => p.min_stock > 0 && p.qty <= p.min_stock).sort((a, b) => a.qty - b.qty)
@@ -89,11 +93,23 @@ export function Dashboard() {
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Action to="/stock-in" icon={<ArrowDownToLine className="size-6" />} label={t('navStockIn')} className="bg-primary text-white hover:bg-primary-hover" />
         <Action to="/stock-out" icon={<ArrowUpFromLine className="size-6" />} label={t('navStockOut')} className="bg-orange-500 text-white hover:bg-orange-600" />
-        <Action to="/products?new=1" icon={<PackagePlus className="size-6" />} label={t('addProduct')} className="bg-surface text-stone-800 ring-1 ring-stone-200 hover:bg-stone-50" />
+        <Action to="/khata" icon={<BookUser className="size-6" />} label={t('navKhata')} className="bg-surface text-stone-800 ring-1 ring-stone-200 hover:bg-stone-50" />
         <Action to="/reports" icon={<BarChart3 className="size-6" />} label={t('navReports')} className="bg-surface text-stone-800 ring-1 ring-stone-200 hover:bg-stone-50" />
       </div>
 
-      {/* 3. KPIs */}
+      {/* 3. Money */}
+      {money && (
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
+          <Stat icon={<Coins className="size-5" />} label={t('todaySales')} value={fmtMoney(money.today_sales, lang)} sub={`${t('profit')}: ${fmtMoney(money.today_profit, lang)}`} onClick={() => nav('/sales')} />
+          <Stat icon={<TrendingUp className="size-5" />} label={t('monthSales')} value={fmtMoney(money.month_sales, lang)} sub={`${t('profit')}: ${fmtMoney(money.month_profit, lang)}`} onClick={() => nav('/reports?tab=profit')} />
+          <Stat icon={<Wallet className="size-5" />} label={t('cashInHand')} value={fmtMoney(money.cash_in_hand, lang)} onClick={() => nav('/roznamcha')} />
+          <Stat icon={<HandCoins className="size-5" />} label={t('totalReceivable')} value={fmtMoney(money.receivable, lang)} tone={money.receivable > 0 ? 'amber' : undefined} onClick={() => nav('/khata?kind=customer')} />
+          <Stat icon={<Landmark className="size-5" />} label={t('totalPayable')} value={fmtMoney(money.payable, lang)} tone={money.payable > 0 ? 'red' : undefined} onClick={() => nav('/khata?kind=supplier')} />
+          <Stat icon={<Package className="size-5" />} label={t('stockValue')} value={fmtMoney(money.stock_value, lang)} />
+        </div>
+      )}
+
+      {/* 4. Stock KPIs */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat icon={<Package className="size-5" />} label={t('totalProducts')} value={fmtNum(active.length)} onClick={() => nav('/products')} />
         <Stat icon={<Droplets className="size-5" />} label={t('totalLiters')} value={fmtBase(totals.volume, 'volume', lang)} />
@@ -169,14 +185,14 @@ function Action({ to, icon, label, className }: { to: string; icon: ReactNode; l
   )
 }
 
-function Stat({ icon, label, value, sub, tone, onClick }: { icon: ReactNode; label: string; value: string; sub?: string; tone?: 'red'; onClick?: () => void }) {
+function Stat({ icon, label, value, sub, tone, onClick }: { icon: ReactNode; label: string; value: string; sub?: string; tone?: 'red' | 'amber'; onClick?: () => void }) {
   return (
     <div onClick={onClick} className={cx('rounded-xl border border-stone-200 bg-surface p-4 shadow-sm', onClick && 'cursor-pointer hover:border-stone-300')}>
       <div className="flex items-center gap-2 text-sm text-stone-500">
-        <span className={cx('grid size-8 place-items-center rounded-lg', tone === 'red' ? 'bg-red-100 text-red-700' : 'bg-brand-50 text-brand-700')}>{icon}</span>
+        <span className={cx('grid size-8 shrink-0 place-items-center rounded-lg', tone === 'red' ? 'bg-red-100 text-red-700' : tone === 'amber' ? 'bg-amber-100 text-amber-800' : 'bg-brand-50 text-brand-700')}>{icon}</span>
         {label}
       </div>
-      <div className={cx('num mt-2 text-2xl font-bold', tone === 'red' && 'text-red-700')}>{value}</div>
+      <div className={cx('num mt-2 text-xl font-bold xl:text-lg 2xl:text-xl', tone === 'red' && 'text-red-700', tone === 'amber' && 'text-amber-800')}>{value}</div>
       {sub && <div className="mt-0.5 text-xs text-stone-500">{sub}</div>}
     </div>
   )

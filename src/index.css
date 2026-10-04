@@ -143,6 +143,23 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   display: none;
 }
 
+/* receipt printing: only the receipt is printed (see components/Receipt.tsx) */
+#print-area {
+  display: none;
+}
+@media print {
+  html.printing-receipt #root {
+    display: none !important;
+  }
+  html.printing-receipt #print-area {
+    display: block !important;
+  }
+  html.printing-receipt,
+  html.printing-receipt body {
+    background: #fff !important;
+  }
+}
+
 @media print {
   @page {
     size: A4;

@@ -10,6 +10,9 @@ import { AuthPage, ResetPassword } from './pages/AuthPage'
 import { Dashboard } from './pages/Dashboard'
 import { ExpiryPage } from './pages/Expiry'
 import { History } from './pages/History'
+import { KhataDetail, KhataList } from './pages/Khata'
+import { Roznamcha } from './pages/Roznamcha'
+import { Sales } from './pages/Sales'
 import { NoOrg } from './pages/NoOrg'
 import { ProductDetail } from './pages/ProductDetail'
 import { Products } from './pages/Products'
@@ -48,6 +51,10 @@ function Root() {
         <Route path="products/:id" element={<ProductDetail />} />
         <Route path="stock-in" element={<StockIn />} />
         <Route path="stock-out" element={<StockOut />} />
+        <Route path="sales" element={<Sales />} />
+        <Route path="khata" element={<KhataList />} />
+        <Route path="khata/:id" element={<KhataDetail />} />
+        <Route path="roznamcha" element={<Roznamcha />} />
         <Route path="expiry" element={<ExpiryPage />} />
         <Route path="history" element={<History />} />
         <Route path="reports" element={<Reports />} />

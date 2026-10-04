@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { ProductPicker } from '../components/domain'
 import { ProductForm } from '../components/ProductForm'
+import { PartyPicker } from '../components/PartyPicker'
 import { Button, Card, ErrorBox, Field, Input, Loading, PageHeader, Select, useFeedback } from '../components/ui'
 import { cx } from '../lib/cx'
 import { useOrg } from '../lib/app'
@@ -14,6 +15,8 @@ import { useI18n } from '../lib/i18n'
 import { supabase } from '../lib/supabase'
 import type { BatchStock, MovementType } from '../lib/types'
 import { fmtTotal } from '../lib/units'
+import { fmtMoney, r2 } from '../lib/money'
+import { loadParties } from '../lib/parties'
 
 interface Line {
   key: number
@@ -22,9 +25,11 @@ interface Line {
   mfg_date: string
   expiry_date: string
   qty: string
+  rate: string // purchase rate per pack
 }
+const rateOf = (n?: number | null) => (Number(n) > 0 ? String(Number(n)) : '')
 let seq = 1
-const blank = (product_id = ''): Line => ({ key: seq++, product_id, batch_no: '', mfg_date: '', expiry_date: '', qty: '' })
+const blank = (product_id = '', rate = ''): Line => ({ key: seq++, product_id, batch_no: '', mfg_date: '', expiry_date: '', qty: '', rate })
 
 export function StockIn() {
   const { t, lang } = useI18n()
@@ -33,19 +38,23 @@ export function StockIn() {
   const [params] = useSearchParams()
 
   const { data, loading, error, reload } = useLoad(async () => {
-    const [catalog, batches] = await Promise.all([
+    const [catalog, batches, suppliers] = await Promise.all([
       loadCatalog(org.id),
       fetchAll<BatchStock>((a, b) => supabase.from('batch_stock').select('*').eq('org_id', org.id).order('expiry_date').range(a, b)),
+      loadParties(org.id, 'supplier'),
     ])
-    return { catalog, batches }
+    return { catalog, batches, suppliers }
   }, [org.id, version])
 
   const [date, setDate] = useState(today)
   const [type, setType] = useState<MovementType>('purchase')
   const [party, setParty] = useState('')
+  const [partyId, setPartyId] = useState('')
+  const [paid, setPaid] = useState('')
   const [reference, setReference] = useState('')
   const [note, setNote] = useState('')
   const [lines, setLines] = useState<Line[]>(() => [blank(params.get('product') ?? '')])
+  const [pendingParty, setPendingParty] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [newFor, setNewFor] = useState<number | null>(null)
@@ -58,10 +67,28 @@ export function StockIn() {
     return m
   }, [data])
 
+  // fill the rate of a product pre-selected from the URL once the catalog is loaded
+  useEffect(() => {
+    if (!data) return
+    setLines((ls) => ls.map((l) => (l.product_id && !l.rate ? { ...l, rate: rateOf(data.catalog.byId.get(l.product_id)?.purchase_price) } : l)))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data])
+  // select a supplier that was just created once the list has reloaded
+  useEffect(() => {
+    if (pendingParty && data?.suppliers.some((p) => p.id === pendingParty)) {
+      setPartyId(pendingParty)
+      setPendingParty(null)
+    }
+  }, [pendingParty, data])
+
   if (loading && !data) return <Loading />
   if (error) return <ErrorBox onRetry={reload}>{errText(error, t)}</ErrorBox>
   if (!data) return null
   const { catalog } = data
+  const isPurchase = type === 'purchase'
+  const total = r2(lines.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.rate) || 0), 0))
+  const paidNum = paid === '' ? total : Number(paid) || 0
+  const due = r2(total - paidNum)
 
   const set = (key: number, patch: Partial<Line>) => setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)))
 
@@ -72,7 +99,10 @@ export function StockIn() {
       if (!l.expiry_date) return setErr(t('errExpiryRequired'))
       if (!(Number(l.qty) > 0)) return setErr(t('errQty'))
       if (l.mfg_date && l.mfg_date > l.expiry_date) return setErr(`${t('mfgDate')} > ${t('expiryDate')}`)
+      if (l.rate !== '' && !(Number(l.rate) >= 0)) return setErr(t('errInvalidPrice'))
     }
+    if (isPurchase && (paidNum < 0 || paidNum > total)) return setErr(t('errInvalidPaid'))
+    if (isPurchase && due > 0 && !partyId) return setErr(t('errCreditNeedsParty'))
     setBusy(true)
     const { data: n, error } = await supabase.rpc('record_stock_in', {
       p_org: org.id,
@@ -84,16 +114,26 @@ export function StockIn() {
         mfg_date: l.mfg_date || null,
         expiry_date: l.expiry_date,
         qty: Number(l.qty),
+        unit_price: l.rate === '' ? null : Number(l.rate),
       })),
       p_party: party || null,
       p_reference: reference || null,
       p_note: note || null,
+      p_party_id: isPurchase && partyId ? partyId : null,
+      p_paid: isPurchase ? paidNum : null,
     })
     setBusy(false)
     if (error) return setErr(errText(error, t))
-    toast(t('stockSaved', { n: n as number }))
+    let msg = t('stockInSaved')
+    if (n) {
+      const { data: pur } = await supabase.from('purchases').select('purchase_no').eq('id', n as string).single()
+      if (pur) msg = t('purchaseSaved', { n: pur.purchase_no })
+    }
+    toast(msg)
     setLines([blank()])
     setParty('')
+    setPartyId('')
+    setPaid('')
     setReference('')
     setNote('')
     refresh()
@@ -114,9 +154,30 @@ export function StockIn() {
           <Field label={t('date')}>
             <Input type="date" value={date} max={today} onChange={(e) => setDate(e.target.value)} />
           </Field>
-          <Field label={type === 'purchase' ? t('supplier') : t('customer')}>
-            <Input value={party} onChange={(e) => setParty(e.target.value)} />
-          </Field>
+          {isPurchase ? (
+            <Field label={`${t('supplier')} (${t('khataAccount')})`}>
+              <PartyPicker
+                kind="supplier"
+                parties={data.suppliers}
+                value={partyId}
+                onChange={setPartyId}
+                onCreated={(id) => {
+                  setPendingParty(id)
+                  reload()
+                }}
+                noneLabel={t('noKhata')}
+              />
+            </Field>
+          ) : (
+            <Field label={t('customer')}>
+              <Input value={party} onChange={(e) => setParty(e.target.value)} />
+            </Field>
+          )}
+          {isPurchase && !partyId && (
+            <Field label={t('supplier')} hint={t('optional')}>
+              <Input value={party} onChange={(e) => setParty(e.target.value)} />
+            </Field>
+          )}
           <Field label={t('invoiceNo')}>
             <Input value={reference} onChange={(e) => setReference(e.target.value)} />
           </Field>
@@ -139,7 +200,7 @@ export function StockIn() {
                   </button>
                 )}
               </div>
-              <ProductPicker products={catalog.products} value={l.product_id} onChange={(id) => set(l.key, { product_id: id, batch_no: '', expiry_date: '', mfg_date: '' })} onCreate={() => setNewFor(l.key)} />
+              <ProductPicker products={catalog.products} value={l.product_id} onChange={(id) => set(l.key, { product_id: id, batch_no: '', expiry_date: '', mfg_date: '', rate: rateOf(catalog.byId.get(id)?.purchase_price) })} onCreate={() => setNewFor(l.key)} />
 
               {existing.length > 0 && (
                 <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
@@ -157,7 +218,7 @@ export function StockIn() {
                 </div>
               )}
 
-              <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
                 <Field label={t('batchNo')} hint={t('batchNoHint')}>
                   <Input
                     value={l.batch_no}
@@ -182,6 +243,12 @@ export function StockIn() {
                 <Field label={`${t('qtyPacks')}${p ? ` (${t(`pt_${p.pack_type}`)})` : ''}`} required hint={p && Number(l.qty) > 0 && p.pack_unit !== 'pcs' ? `= ${fmtTotal(Number(l.qty), p.pack_size, p.pack_unit, lang)}` : undefined}>
                   <Input type="number" min="0" step="any" inputMode="decimal" value={l.qty} onChange={(e) => set(l.key, { qty: e.target.value })} />
                 </Field>
+                <Field
+                  label={t('purchasePrice')}
+                  hint={Number(l.qty) > 0 && Number(l.rate) > 0 ? `= ${fmtMoney(Number(l.qty) * Number(l.rate), lang)}` : t('optional')}
+                >
+                  <Input type="number" min="0" step="any" inputMode="decimal" placeholder="0" value={l.rate} onChange={(e) => set(l.key, { rate: e.target.value })} />
+                </Field>
               </div>
             </Card>
           )
@@ -195,6 +262,22 @@ export function StockIn() {
       </div>
 
       <Card className="mt-4 p-4">
+        {isPurchase && total > 0 && (
+          <div className="mb-4 grid gap-3 sm:grid-cols-3">
+            <div className="rounded-lg bg-stone-50 p-3">
+              <div className="text-sm text-stone-500">{t('grandTotal')}</div>
+              <div className="num text-xl font-bold">{fmtMoney(total, lang)}</div>
+            </div>
+            <Field label={t('paidNow')}>
+              <Input type="number" min="0" step="any" inputMode="decimal" placeholder={String(total)} value={paid} onChange={(e) => setPaid(e.target.value)} />
+            </Field>
+            <div className={cx('rounded-lg p-3', due > 0 ? 'bg-amber-50' : 'bg-stone-50')}>
+              <div className="text-sm text-stone-500">{t('balanceDue')}</div>
+              <div className={cx('num text-xl font-bold', due > 0 && 'text-amber-800')}>{fmtMoney(due, lang)}</div>
+              {due > 0 && !partyId && <div className="text-xs text-red-600">{t('errCreditNeedsParty')}</div>}
+            </div>
+          </div>
+        )}
         <Field label={t('note')} hint={t('optional')}>
           <Input value={note} onChange={(e) => setNote(e.target.value)} />
         </Field>
@@ -212,7 +295,7 @@ export function StockIn() {
           const key = newFor
           setNewFor(null)
           refresh()
-          if (key !== null && ids[0]) set(key, { product_id: ids[0] })
+          if (key !== null && ids[0]) set(key, { product_id: ids[0], rate: '' })
           if (ids.length > 1) setLines((ls) => [...ls, ...ids.slice(1).map((id) => blank(id))])
           toast(ids.length > 1 ? t('productsSaved', { n: ids.length }) : t('productSaved'))
         }}

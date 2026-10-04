@@ -1,5 +1,5 @@
 import {
-  AlertTriangle, ArrowDownToLine, ArrowUpFromLine, BarChart3, CalendarClock, CheckCircle2, ChevronRight,
+  AlertTriangle, ArrowDownToLine, ArrowUpFromLine, BarChart3, BookUser, CalendarClock, CheckCircle2, ChevronRight, FileText, NotebookPen,
   History, LayoutDashboard, LogOut, Menu, Moon, Package, PanelLeftClose, PanelLeftOpen, Settings, Sprout, Sun, X,
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
@@ -19,12 +19,15 @@ const NAV: { to: string; key: TKey; icon: typeof Package; end?: boolean }[] = [
   { to: '/products', key: 'navProducts', icon: Package },
   { to: '/stock-in', key: 'navStockIn', icon: ArrowDownToLine },
   { to: '/stock-out', key: 'navStockOut', icon: ArrowUpFromLine },
+  { to: '/sales', key: 'navSales', icon: FileText },
+  { to: '/khata', key: 'navKhata', icon: BookUser },
+  { to: '/roznamcha', key: 'navRoznamcha', icon: NotebookPen },
   { to: '/expiry', key: 'navExpiry', icon: CalendarClock },
   { to: '/history', key: 'navLedger', icon: History },
   { to: '/reports', key: 'navReports', icon: BarChart3 },
   { to: '/settings', key: 'navSettings', icon: Settings },
 ]
-const MOBILE = ['/', '/stock-in', '/stock-out', '/reports']
+const MOBILE = ['/', '/stock-in', '/stock-out', '/khata']
 
 export function LangToggle({ className }: { className?: string }) {
   const { lang, setLang } = useI18n()

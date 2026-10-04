@@ -14,6 +14,7 @@ import { useI18n } from '../lib/i18n'
 import { supabase } from '../lib/supabase'
 import { authorOf, type BatchStock, type Movement } from '../lib/types'
 import { fmtNum } from '../lib/units'
+import { fmtMoney } from '../lib/money'
 import { MovementBadge } from './Dashboard'
 
 export function ProductDetail() {
@@ -56,7 +57,12 @@ export function ProductDetail() {
     refresh()
   }
   const remove = async () => {
+    // products with stock history are kept for the records: deactivate instead
+    if (data.moves.length > 0) return toast(t('errProductHasHistory'), 'err')
     if (!(await confirm(t('deleteProductConfirm')))) return
+    // empty batches (no entries) go with the product
+    const b = await supabase.from('batches').delete().eq('product_id', p.id)
+    if (b.error) return toast(errText(b.error, t), 'err')
     const { error } = await supabase.from('products').delete().eq('id', p.id)
     if (error) return toast(errText(error, t), 'err')
     toast(t('deleted'))
@@ -90,13 +96,13 @@ export function ProductDetail() {
           {isAdmin && (
             <Button variant="secondary" onClick={toggleActive}><Power className="size-4" /> {p.is_active ? t('deactivate') : t('activate')}</Button>
           )}
-          {isAdmin && data.batches.length === 0 && (
+          {isAdmin && (
             <Button variant="danger" onClick={remove}><Trash2 className="size-4" /> {t('delete')}</Button>
           )}
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         <div className="rounded-xl border border-stone-200 bg-surface p-4">
           <div className="text-sm text-stone-500">{t('stock')}</div>
           <div className="mt-1 text-2xl font-bold"><QtyCell packs={p.qty} p={p} strong /></div>
@@ -108,6 +114,17 @@ export function ProductDetail() {
         <div className="rounded-xl border border-stone-200 bg-surface p-4">
           <div className="text-sm text-stone-500">{t('minStock')}</div>
           <div className="num mt-1 text-2xl font-bold">{fmtNum(p.min_stock)}</div>
+        </div>
+        <div className="rounded-xl border border-stone-200 bg-surface p-4">
+          <div className="text-sm text-stone-500">{t('purchasePrice')} / {t('mrp')}</div>
+          <div className="num mt-1 text-lg font-bold">{fmtMoney(p.purchase_price, lang)} / {fmtMoney(p.sale_price, lang)}</div>
+          {Number(p.sale_price) > 0 && Number(p.purchase_price) > 0 && (
+            <div className="num text-xs text-brand-700">{t('profit')}: {fmtMoney(Number(p.sale_price) - Number(p.purchase_price), lang)}</div>
+          )}
+        </div>
+        <div className="rounded-xl border border-stone-200 bg-surface p-4">
+          <div className="text-sm text-stone-500">{t('stockValue')}</div>
+          <div className="num mt-1 text-lg font-bold">{fmtMoney(p.stock_value, lang)}</div>
         </div>
       </div>
 
@@ -158,6 +175,7 @@ export function ProductDetail() {
                   <th>{t('type')}</th>
                   <th>{t('batch')}</th>
                   <th className="r">{t('qty')}</th>
+                  <th className="r">{t('rate')}</th>
                   <th>{t('party')}</th>
                   <th>{t('reference')}</th>
                   <th>{t('by')}</th>
@@ -170,6 +188,7 @@ export function ProductDetail() {
                     <td><MovementBadge type={m.type} /></td>
                     <td className="num">{m.batches?.batch_no}</td>
                     <td className="r"><QtyCell packs={Number(m.qty)} p={p} /></td>
+                    <td className="r num">{m.unit_price != null ? fmtMoney(m.unit_price, lang) : ''}</td>
                     <td>{m.party}</td>
                     <td className="num">{m.reference}</td>
                     <td className="text-stone-500">{authorOf(m)}</td>

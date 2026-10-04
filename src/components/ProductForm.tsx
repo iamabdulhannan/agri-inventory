@@ -12,6 +12,8 @@ import { cx } from '../lib/cx'
 
 interface SizeRow extends Preset {
   type: PackType
+  purchase: string // purchase rate per pack
+  mrp: string // sale price per pack
 }
 const key = (s: Preset) => `${s.size}|${s.unit}`
 
@@ -59,7 +61,7 @@ export function ProductForm({
       setCompanyId(product.company_id ?? '')
       const m = measureOf(product.pack_unit)
       setKind(m === 'volume' ? 'liquid' : m === 'weight' ? 'dry' : 'pcs')
-      setSizes([{ size: Number(product.pack_size), unit: product.pack_unit, type: product.pack_type }])
+      setSizes([{ size: Number(product.pack_size), unit: product.pack_unit, type: product.pack_type, purchase: product.purchase_price ? String(Number(product.purchase_price)) : '', mrp: product.sale_price ? String(Number(product.sale_price)) : '' }])
       setMinStock(String(product.min_stock))
       setNotes(product.notes ?? '')
     } else {
@@ -80,7 +82,7 @@ export function ProductForm({
   const has = (p: Preset) => sizes.some((s) => key(s) === key(p))
 
   const toggle = (p: Preset) => {
-    const row = { ...p, type: suggestPackType(p.size, p.unit) }
+    const row: SizeRow = { ...p, type: suggestPackType(p.size, p.unit), purchase: '', mrp: '' }
     if (editing) return setSizes([row])
     setSizes((list) => (has(p) ? list.filter((s) => key(s) !== key(p)) : [...list, row]))
   }
@@ -122,12 +124,12 @@ export function ProductForm({
         const s = sizes[0]
         const { error } = await supabase
           .from('products')
-          .update({ ...base, pack_size: s.size, pack_unit: s.unit, pack_type: s.type })
+          .update({ ...base, pack_size: s.size, pack_unit: s.unit, pack_type: s.type, purchase_price: Number(s.purchase) || 0, sale_price: Number(s.mrp) || 0 })
           .eq('id', product.id)
         if (error) throw error
         onSaved([product.id])
       } else {
-        const rows = sizes.map((s) => ({ ...base, org_id: org.id, pack_size: s.size, pack_unit: s.unit, pack_type: s.type }))
+        const rows = sizes.map((s) => ({ ...base, org_id: org.id, pack_size: s.size, pack_unit: s.unit, pack_type: s.type, purchase_price: Number(s.purchase) || 0, sale_price: Number(s.mrp) || 0 }))
         const { data, error } = await supabase.from('products').insert(rows).select('id')
         if (error) throw error
         onSaved((data ?? []).map((r) => r.id))
@@ -243,10 +245,36 @@ export function ProductForm({
         {sizes.length > 0 && (
           <div className="mt-4 divide-y divide-stone-100 rounded-lg border border-stone-200">
             {sizes.map((s, i) => (
-              <div key={key(s)} className="flex items-center gap-3 px-3 py-2">
-                <span className="num w-24 font-semibold text-brand-800">{fmtPack(s.size, s.unit, lang)}</span>
+              <div key={key(s)} className="flex flex-wrap items-end gap-x-3 gap-y-2 px-3 py-2.5">
+                <span className="num w-20 pb-2 font-semibold text-brand-800">{fmtPack(s.size, s.unit, lang)}</span>
+                <label className="block">
+                  <span className="mb-0.5 block text-xs text-stone-500">{t('purchasePrice')}</span>
+                  <Input
+                    className="h-9 w-28"
+                    type="number"
+                    min="0"
+                    step="any"
+                    inputMode="decimal"
+                    placeholder="345"
+                    value={s.purchase}
+                    onChange={(e) => setSizes((list) => list.map((x, j) => (j === i ? { ...x, purchase: e.target.value } : x)))}
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-0.5 block text-xs text-stone-500">{t('mrp')}</span>
+                  <Input
+                    className="h-9 w-28"
+                    type="number"
+                    min="0"
+                    step="any"
+                    inputMode="decimal"
+                    placeholder="500"
+                    value={s.mrp}
+                    onChange={(e) => setSizes((list) => list.map((x, j) => (j === i ? { ...x, mrp: e.target.value } : x)))}
+                  />
+                </label>
                 <Select
-                  className="h-9 w-40"
+                  className="h-9 w-32"
                   value={s.type}
                   onChange={(e) => setSizes((list) => list.map((x, j) => (j === i ? { ...x, type: e.target.value as PackType } : x)))}
                 >

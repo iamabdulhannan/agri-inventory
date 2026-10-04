@@ -34,6 +34,7 @@ React + Vite + Tailwind on the front end, Supabase (Postgres + Auth) on the back
    2. `supabase/migrations/002_one_org_per_user.sql`: one account = one organization
    3. `supabase/migrations/003_password_reset.sql`: owner/admin can reset member passwords
    4. `supabase/migrations/004_remove_member.sql`: removing a member deletes their account and signs them out (stock history keeps their name)
+   5. `supabase/migrations/005_sales_khata.sql`: prices, sales invoices and receipts, purchases, khata (customer and supplier ledgers), roznamcha and profit
 3. Under **Authentication → URL Configuration**:
    - Set **Site URL** to your app URL (`http://localhost:5173` while developing).
    - Add `http://localhost:5173/**` and your production URL `/**` to **Redirect URLs**.
@@ -66,6 +67,16 @@ The app sends **no emails** while `VITE_EMAILS_ENABLED=false` in `.env`. Keep it
 - **Owner forgot password:** open `supabase/tools/reset_owner_password.sql` and put in the owner's email and a new password. Run it in the Supabase SQL Editor, then sign in with the new password.
 
 When Gmail or other SMTP is configured, set `VITE_EMAILS_ENABLED=true` to turn the email-based "Forgot password" link and confirmation emails back on.
+
+## Sales, khata and roznamcha
+
+- **Prices:** each product and pack size has a **purchase rate** and an **MRP**. Stock In records the rate you paid, and the product keeps the latest one.
+- **New Sale:** choose a walk-in customer or a khata customer. The rate is filled in from the MRP and can be changed. Add any discount and the amount received; the unpaid balance goes to the customer's khata. A receipt is shown, which you can print on 80 mm thermal paper or A4.
+- **Profit** uses the actual cost of the batch that was sold, so it is exact even when purchase rates change.
+- **Khata:** customers and suppliers, with opening balance, full ledger, running balance and "Receive payment" / "Pay supplier".
+- **Roznamcha:** daily cash book showing opening cash, every cash in and out (sales, purchases, khata payments, expenses, cash in/out) and closing cash. There is also a month view.
+- **Invoices:** every sale and purchase. Reprint receipts here; admins can void an invoice, which returns its stock and removes its khata and roznamcha entries.
+- **Optional test prices:** `supabase/seed/sample_prices.sql` fills in rough prices for products that have none.
 
 ## Daily use
 

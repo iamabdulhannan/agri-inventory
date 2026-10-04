@@ -55,6 +55,8 @@ export interface Product {
   is_active: boolean
   notes: string | null
   created_at: string
+  purchase_price: number
+  sale_price: number
 }
 
 /** Row of the product_stock view */
@@ -65,6 +67,7 @@ export interface ProductStock extends Product {
   qty: number
   next_expiry: string | null
   active_batches: number
+  stock_value: number
 }
 
 export interface BatchStock {
@@ -76,6 +79,7 @@ export interface BatchStock {
   expiry_date: string
   created_at: string
   qty: number
+  avg_cost?: number | null
 }
 
 export interface ExpiryAlert {
@@ -111,6 +115,10 @@ export interface Movement {
   profiles?: { full_name: string } | null
   /** name saved on the entry; kept after the member is removed */
   created_by_name?: string | null
+  sale_id?: string | null
+  purchase_id?: string | null
+  unit_price?: number | null
+  unit_cost?: number | null
 }
 
 export interface SummaryRow {
@@ -137,3 +145,122 @@ export interface RegisterRow {
 
 /** Who made a stock entry: live profile name, or the saved name if the member was removed */
 export const authorOf = (m: Pick<Movement, 'profiles' | 'created_by_name'>) => m.profiles?.full_name || m.created_by_name || ''
+
+// ---------------------------------------------------------------- sales & khata
+export type PartyKind = 'customer' | 'supplier'
+export type CashKind = 'sale' | 'purchase' | 'receipt' | 'payment' | 'expense' | 'cash_in' | 'cash_out'
+
+export interface Party {
+  id: string
+  org_id: string
+  kind: PartyKind
+  name: string
+  phone: string | null
+  address: string | null
+  opening_balance: number
+  notes: string | null
+  is_active: boolean
+  created_at: string
+}
+/** party_balances view: customer = they owe us, supplier = we owe them */
+export interface PartyBalance extends Party {
+  balance: number
+  last_activity: string | null
+}
+
+export interface Sale {
+  id: string
+  org_id: string
+  invoice_no: number
+  sale_date: string
+  party_id: string | null
+  customer_name: string | null
+  subtotal: number
+  discount: number
+  total: number
+  paid: number
+  note: string | null
+  created_by_name: string | null
+  created_at: string
+}
+
+export interface Purchase {
+  id: string
+  org_id: string
+  purchase_no: number
+  purchase_date: string
+  party_id: string | null
+  supplier_name: string | null
+  reference: string | null
+  total: number
+  paid: number
+  note: string | null
+  created_by_name: string | null
+  created_at: string
+}
+
+export interface CashEntry {
+  id: string
+  org_id: string
+  entry_date: string
+  kind: CashKind
+  amount: number
+  party_id: string | null
+  sale_id: string | null
+  purchase_id: string | null
+  note: string | null
+  created_by_name: string | null
+  created_at: string
+  parties?: { name: string } | null
+}
+
+export interface LedgerRow {
+  entry_date: string
+  kind: 'opening' | 'sale' | 'purchase' | 'receipt' | 'payment'
+  ref: string | null
+  note: string | null
+  bill: number
+  paid: number
+  balance: number
+  doc_id: string | null
+  created_at: string
+}
+
+export interface CashDay {
+  day: string
+  opening: number
+  cash_in: number
+  cash_out: number
+  closing: number
+}
+
+export interface SalesDay {
+  day: string
+  invoices: number
+  sales: number
+  discount: number
+  cost: number
+  profit: number
+  received: number
+}
+
+export interface ProductSalesRow {
+  product_id: string
+  qty: number
+  revenue: number
+  cost: number
+  profit: number
+}
+
+export interface MoneySummary {
+  today_sales: number
+  today_profit: number
+  today_received: number
+  month_sales: number
+  month_profit: number
+  cash_in_hand: number
+  receivable: number
+  payable: number
+  stock_value: number
+  today_expenses: number
+}

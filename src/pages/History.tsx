@@ -13,6 +13,7 @@ import { useI18n } from '../lib/i18n'
 import { supabase } from '../lib/supabase'
 import { ALL_TYPES, authorOf, type Movement, type MovementType } from '../lib/types'
 import { fmtPack } from '../lib/units'
+import { fmtMoney } from '../lib/money'
 import { MovementBadge } from './Dashboard'
 
 export function History() {
@@ -62,10 +63,10 @@ export function History() {
 
   const exportCsv = () => {
     if (!data) return
-    downloadCsv(`stock-history-${from}-to-${to}`, [t('date'), t('type'), t('product'), t('packSize'), t('batchNo'), t('qty'), t('party'), t('reference'), t('note'), t('by')],
+    downloadCsv(`stock-history-${from}-to-${to}`, [t('date'), t('type'), t('product'), t('packSize'), t('batchNo'), t('qty'), t('rate'), t('party'), t('reference'), t('note'), t('by')],
       rows.map((m) => {
         const p = m.batches ? data.catalog.byId.get(m.batches.product_id) : undefined
-        return [m.movement_date, t(`mv_${m.type}`), p?.name, p ? fmtPack(p.pack_size, p.pack_unit) : '', m.batches?.batch_no, m.qty, m.party, m.reference, m.note, authorOf(m)]
+        return [m.movement_date, t(`mv_${m.type}`), p?.name, p ? fmtPack(p.pack_size, p.pack_unit) : '', m.batches?.batch_no, m.qty, m.unit_price ?? '', m.party, m.reference, m.note, authorOf(m)]
       }))
   }
 
@@ -123,6 +124,7 @@ export function History() {
                     <th>{t('product')}</th>
                     <th>{t('batch')}</th>
                     <th className="r">{t('qty')}</th>
+                    <th className="r">{t('rate')}</th>
                     <th>{t('party')}</th>
                     <th>{t('reference')}</th>
                     <th>{t('by')}</th>
@@ -139,14 +141,18 @@ export function History() {
                         <td>{p ? <ProductName p={p} /> : '—'}</td>
                         <td className="num">{m.batches?.batch_no}</td>
                         <td className="r">{p && <QtyCell packs={Number(m.qty)} p={p} strong />}</td>
+                        <td className="r num">{m.unit_price != null ? fmtMoney(m.unit_price, lang) : ''}</td>
                         <td>{m.party}{m.note && <div className="text-xs text-stone-500">{m.note}</div>}</td>
                         <td className="num">{m.reference}</td>
                         <td className="text-stone-500">{authorOf(m)}</td>
                         {isAdmin && (
                           <td className="no-print r">
-                            <Button size="sm" variant="ghost" onClick={() => del(m)} aria-label={t('delete')}>
-                              <Trash2 className="size-4 text-red-600" />
-                            </Button>
+                            {/* lines of an invoice are voided with the whole invoice (Invoices page) */}
+                            {m.sale_id || m.purchase_id ? null : (
+                              <Button size="sm" variant="ghost" onClick={() => del(m)} aria-label={t('delete')}>
+                                <Trash2 className="size-4 text-red-600" />
+                              </Button>
+                            )}
                           </td>
                         )}
                       </tr>
