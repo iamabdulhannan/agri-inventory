@@ -1,4 +1,4 @@
-import { FileText, Printer, Search, Trash2 } from 'lucide-react'
+import { FileText, Printer, Search, Trash2, Undo2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { PrintHeader, ReportButtons } from '../components/domain'
@@ -135,7 +135,8 @@ export function Sales() {
                             <td className="r">{due > 0 ? <Badge tone="amber">{fmtMoney(due, lang)}</Badge> : <span className="text-stone-300">—</span>}</td>
                             <td className="text-stone-500">{s.created_by_name}</td>
                             <td className="no-print r whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                              <Button size="sm" variant="ghost" onClick={() => setReceipt(s.id)} aria-label={t('printReceipt')}><Printer className="size-4" /></Button>
+                              <Button size="sm" variant="ghost" onClick={() => setReceipt(s.id)} aria-label={t('printReceipt')} title={t('printReceipt')}><Printer className="size-4" /></Button>
+                              <Button size="sm" variant="ghost" onClick={() => nav(`/stock-in?type=return_in&invoice=${s.invoice_no}`)} aria-label={t('mv_return_in')} title={t('mv_return_in')}><Undo2 className="size-4" /></Button>
                               {isAdmin && <Button size="sm" variant="ghost" onClick={() => voidSale(s)} aria-label={t('voidDoc')} title={t('voidDoc')}><Trash2 className="size-4 text-red-600" /></Button>}
                             </td>
                           </tr>

@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom'
 import { ProductPicker } from '../components/domain'
 import { ProductForm } from '../components/ProductForm'
 import { PartyPicker } from '../components/PartyPicker'
+import { InvoiceReturn } from '../components/InvoiceReturn'
 import { Button, Card, ErrorBox, Field, Input, Loading, PageHeader, Select, useFeedback } from '../components/ui'
 import { cx } from '../lib/cx'
 import { useOrg } from '../lib/app'
@@ -47,7 +48,8 @@ export function StockIn() {
   }, [org.id, version])
 
   const [date, setDate] = useState(today)
-  const [type, setType] = useState<MovementType>('purchase')
+  const [type, setType] = useState<MovementType>(params.get('type') === 'return_in' ? 'return_in' : 'purchase')
+  const [invLoaded, setInvLoaded] = useState(false)
   const [party, setParty] = useState('')
   const [partyId, setPartyId] = useState('')
   const [paid, setPaid] = useState('')
@@ -87,7 +89,8 @@ export function StockIn() {
   const { catalog } = data
   const isPurchase = type === 'purchase'
   const total = r2(lines.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.rate) || 0), 0))
-  const paidNum = paid === '' ? total : Number(paid) || 0
+  // empty Paid: with a supplier khata = nothing paid yet (on credit); without = paid in full
+  const paidNum = paid === '' ? (partyId ? 0 : total) : Number(paid) || 0
   const due = r2(total - paidNum)
 
   const set = (key: number, patch: Partial<Line>) => setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)))
@@ -146,7 +149,7 @@ export function StockIn() {
       <Card className="p-4">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Field label={t('entryType')}>
-            <Select value={type} onChange={(e) => setType(e.target.value as MovementType)}>
+            <Select value={type} onChange={(e) => { setType(e.target.value as MovementType); setInvLoaded(false) }}>
               <option value="purchase">{t('mv_purchase')}</option>
               <option value="return_in">{t('mv_return_in')}</option>
             </Select>
@@ -160,7 +163,10 @@ export function StockIn() {
                 kind="supplier"
                 parties={data.suppliers}
                 value={partyId}
-                onChange={setPartyId}
+                onChange={(id) => {
+                  setPartyId(id)
+                  setPaid('')
+                }}
                 onCreated={(id) => {
                   setPendingParty(id)
                   reload()
@@ -168,8 +174,8 @@ export function StockIn() {
                 noneLabel={t('noKhata')}
               />
             </Field>
-          ) : (
-            <Field label={t('customer')}>
+          ) : invLoaded ? null : (
+            <Field label={t('customer')} hint={t('optional')}>
               <Input value={party} onChange={(e) => setParty(e.target.value)} />
             </Field>
           )}
@@ -178,12 +184,19 @@ export function StockIn() {
               <Input value={party} onChange={(e) => setParty(e.target.value)} />
             </Field>
           )}
-          <Field label={t('invoiceNo')}>
-            <Input value={reference} onChange={(e) => setReference(e.target.value)} />
-          </Field>
+          {!invLoaded && (
+            <Field label={t('invoiceNo')} hint={isPurchase ? undefined : t('optional')}>
+              <Input value={reference} onChange={(e) => setReference(e.target.value)} />
+            </Field>
+          )}
         </div>
       </Card>
 
+      {type === 'return_in' && (
+        <InvoiceReturn catalog={catalog} date={date} initialInvoice={params.get('invoice') ?? undefined} onLoaded={setInvLoaded} onDone={refresh} />
+      )}
+
+      {!invLoaded && (<>
       <div className="mt-4 space-y-3">
         {lines.map((l, i) => {
           const p = catalog.byId.get(l.product_id)
@@ -268,9 +281,17 @@ export function StockIn() {
               <div className="text-sm text-stone-500">{t('grandTotal')}</div>
               <div className="num text-xl font-bold">{fmtMoney(total, lang)}</div>
             </div>
-            <Field label={t('paidNow')}>
-              <Input type="number" min="0" step="any" inputMode="decimal" placeholder={String(total)} value={paid} onChange={(e) => setPaid(e.target.value)} />
-            </Field>
+            <div>
+              <Field label={t('paidNow')} hint={partyId ? t('paidHintKhata') : undefined}>
+                <Input type="number" min="0" step="any" inputMode="decimal" placeholder={partyId ? '0' : String(total)} value={paid} onChange={(e) => setPaid(e.target.value)} />
+              </Field>
+              {partyId && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <Button size="sm" variant={paidNum === total ? 'primary' : 'secondary'} onClick={() => setPaid(String(total))}>{t('fullPayment')}</Button>
+                  <Button size="sm" variant={paidNum === 0 ? 'warning' : 'secondary'} onClick={() => setPaid('0')}>{t('onCredit')}</Button>
+                </div>
+              )}
+            </div>
             <div className={cx('rounded-lg p-3', due > 0 ? 'bg-amber-50' : 'bg-stone-50')}>
               <div className="text-sm text-stone-500">{t('balanceDue')}</div>
               <div className={cx('num text-xl font-bold', due > 0 && 'text-amber-800')}>{fmtMoney(due, lang)}</div>
@@ -286,6 +307,7 @@ export function StockIn() {
           <Check className="size-5" /> {t('saveStock')} ({t('totalItems', { n: lines.length })})
         </Button>
       </Card>
+      </>)}
 
       <ProductForm
         open={newFor !== null}

@@ -216,7 +216,7 @@ export interface CashEntry {
 
 export interface LedgerRow {
   entry_date: string
-  kind: 'opening' | 'sale' | 'purchase' | 'receipt' | 'payment'
+  kind: 'opening' | 'sale' | 'purchase' | 'receipt' | 'payment' | 'return'
   ref: string | null
   note: string | null
   bill: number

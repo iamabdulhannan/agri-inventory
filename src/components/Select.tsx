@@ -30,7 +30,7 @@ const SEARCH_FROM = 9 // show a search box when the list has this many options
  * but a styled, keyboard-friendly list that works in dark mode, RTL and inside modals.
  */
 export function Select({
-  value, onChange, children, className, disabled, title, id, 'aria-label': ariaLabel,
+  value, onChange, children, className, disabled, title, id, 'aria-label': ariaLabel, searchable: searchProp,
 }: {
   value: string | number
   onChange: (e: { target: { value: string } }) => void
@@ -40,6 +40,8 @@ export function Select({
   title?: string
   id?: string
   'aria-label'?: string
+  /** true: always show the search box; default: only for long lists */
+  searchable?: boolean
 }) {
   const { t, lang } = useI18n()
   const listId = useId()
@@ -61,12 +63,13 @@ export function Select({
   )
   const current = options.find((o) => o.value === String(value))
   const placeholder = !current || current.disabled
-  const searchable = options.length >= SEARCH_FROM
+  const searchable = searchProp ?? options.length >= SEARCH_FROM
 
   const shown = useMemo(() => {
     const terms = query.toLowerCase().split(/\s+/).filter(Boolean)
     if (!terms.length) return options
-    return options.filter((o) => terms.every((x) => o.text.toLowerCase().includes(x)))
+    // action options such as "+ New customer" (value starting with "__") always stay visible
+    return options.filter((o) => o.value.startsWith('__') || terms.every((x) => o.text.toLowerCase().includes(x)))
   }, [options, query])
 
   const place = useCallback(() => {

@@ -6,7 +6,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test:db": "node supabase/tests/schema.test.mjs && node supabase/tests/password.test.mjs && node supabase/tests/members.test.mjs && node supabase/tests/sales.test.mjs"
+    "test:db": "node supabase/tests/schema.test.mjs && node supabase/tests/password.test.mjs && node supabase/tests/members.test.mjs && node supabase/tests/sales.test.mjs && node supabase/tests/returns.test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.117.2",

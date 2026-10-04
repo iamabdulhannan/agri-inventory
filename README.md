@@ -35,6 +35,7 @@ React + Vite + Tailwind on the front end, Supabase (Postgres + Auth) on the back
    3. `supabase/migrations/003_password_reset.sql`: owner/admin can reset member passwords
    4. `supabase/migrations/004_remove_member.sql`: removing a member deletes their account and signs them out (stock history keeps their name)
    5. `supabase/migrations/005_sales_khata.sql`: prices, sales invoices and receipts, purchases, khata (customer and supplier ledgers), roznamcha and profit
+   6. `supabase/migrations/006_sale_returns.sql`: customer returns against a sale invoice (credit to khata or cash refund)
 3. Under **Authentication → URL Configuration**:
    - Set **Site URL** to your app URL (`http://localhost:5173` while developing).
    - Add `http://localhost:5173/**` and your production URL `/**` to **Redirect URLs**.

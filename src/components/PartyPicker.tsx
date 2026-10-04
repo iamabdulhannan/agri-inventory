@@ -21,7 +21,7 @@ export function PartyPicker({
   const [adding, setAdding] = useState(false)
   return (
     <>
-      <Select value={value} onChange={(e) => (e.target.value === '__new' ? setAdding(true) : onChange(e.target.value))}>
+      <Select searchable value={value} onChange={(e) => (e.target.value === '__new' ? setAdding(true) : onChange(e.target.value))}>
         <option value="">{noneLabel}</option>
         {parties
           .filter((p) => p.is_active || p.id === value)

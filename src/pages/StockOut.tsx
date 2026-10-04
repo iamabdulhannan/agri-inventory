@@ -94,7 +94,8 @@ export function StockOut() {
   const subtotal = r2(lines.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.rate) || 0), 0))
   const disc = Number(discount) || 0
   const total = r2(subtotal - disc)
-  const paidNum = received === '' ? total : Number(received) || 0
+  // empty Received: walk-in = paid in full (cash only); khata customer = nothing received (all on credit)
+  const paidNum = received === '' ? (partyId ? 0 : total) : Number(received) || 0
   const due = r2(total - paidNum)
 
   const reset = () => {
@@ -180,9 +181,13 @@ export function StockOut() {
                   kind="customer"
                   parties={data.customers}
                   value={partyId}
-                  onChange={setPartyId}
+                  onChange={(id) => {
+                    setPartyId(id)
+                    setReceived('')
+                  }}
                   onCreated={(id) => {
                     setPendingParty(id)
+                    setReceived('')
                     reload()
                   }}
                   noneLabel={t('walkIn')}
@@ -334,9 +339,17 @@ export function StockOut() {
               </div>
             </div>
             <div className="grid gap-3 sm:grid-cols-3">
-              <Field label={t('received')}>
-                <Input type="number" min="0" step="any" inputMode="decimal" placeholder={String(total)} value={received} onChange={(e) => setReceived(e.target.value)} />
-              </Field>
+              <div>
+                <Field label={t('received')} hint={partyId ? t('receivedHintKhata') : t('receivedHintWalkIn')}>
+                  <Input type="number" min="0" step="any" inputMode="decimal" placeholder={partyId ? '0' : String(total)} value={received} onChange={(e) => setReceived(e.target.value)} />
+                </Field>
+                {partyId && total > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <Button size="sm" variant={paidNum === total ? 'primary' : 'secondary'} onClick={() => setReceived(String(total))}>{t('fullPayment')}</Button>
+                    <Button size="sm" variant={paidNum === 0 ? 'warning' : 'secondary'} onClick={() => setReceived('0')}>{t('onCredit')}</Button>
+                  </div>
+                )}
+              </div>
               <div className={cx('rounded-lg p-3 sm:col-span-2', due > 0 ? 'bg-amber-50' : 'bg-stone-50')}>
                 <div className="text-sm text-stone-500">{t('balanceDue')}</div>
                 <div className={cx('num text-lg font-bold', due > 0 && 'text-amber-800')}>{fmtMoney(due, lang)}</div>

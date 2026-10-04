@@ -232,10 +232,10 @@ export function KhataDetail() {
               </thead>
               <tbody>
                 {ledger.map((r, i) => (
-                  <tr key={i} className={cx(r.kind === 'sale' && 'cursor-pointer')} onClick={() => r.kind === 'sale' && r.doc_id && setReceipt(r.doc_id)}>
+                  <tr key={i} className={cx((r.kind === 'sale' || r.kind === 'return') && 'cursor-pointer')} onClick={() => (r.kind === 'sale' || r.kind === 'return') && r.doc_id && setReceipt(r.doc_id)}>
                     <td className="num whitespace-nowrap">{fmtDate(r.entry_date, lang)}</td>
                     <td>
-                      <Badge tone={r.kind === 'receipt' || r.kind === 'payment' ? 'green' : r.kind === 'opening' ? 'stone' : isCustomer ? 'amber' : 'red'}>{t(`lk_${r.kind}`)}</Badge>
+                      <Badge tone={r.kind === 'receipt' || r.kind === 'payment' || r.kind === 'return' ? 'green' : r.kind === 'opening' ? 'stone' : isCustomer ? 'amber' : 'red'}>{t(`lk_${r.kind}`)}</Badge>
                       {r.note && <div className="text-xs text-stone-500">{r.note}</div>}
                     </td>
                     <td className="num">{r.ref}</td>
