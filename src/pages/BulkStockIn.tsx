@@ -162,7 +162,10 @@ export function BulkStockIn() {
         p_date: date,
         p_type: 'purchase',
         p_lines: lines,
-        p_party: null,
+        // no supplier chosen: use the companies of the items as the supplier name
+        p_party: isPurchase && !partyId
+          ? [...new Set(ok.map((r) => r.product?.company_name ?? r.create?.company).filter(Boolean) as string[])].slice(0, 3).join(', ') || null
+          : null,
         p_reference: reference || null,
         p_note: note || null,
         p_party_id: isPurchase && partyId ? partyId : null,

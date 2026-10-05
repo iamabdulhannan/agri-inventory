@@ -16,11 +16,12 @@ import { fmtPack } from '../lib/units'
 import { fmtMoney } from '../lib/money'
 import { MovementBadge } from './Dashboard'
 import { EditStockLine, type EditableLine } from '../components/EditStockLine'
+import { canDeleteLine, useDeleteLine } from '../lib/deleteLine'
 
 export function History() {
   const { t, pick, lang } = useI18n()
   const { org, today, version, isAdmin, refresh } = useOrg()
-  const { toast, confirm } = useFeedback()
+  const { toast } = useFeedback()
   const [params] = useSearchParams()
   const nav = useNavigate()
   const [editLine, setEditLine] = useState<EditableLine | null>(null)
@@ -56,13 +57,7 @@ export function History() {
     })
   }, [data, q])
 
-  const del = async (m: Movement) => {
-    if (!(await confirm(t('deleteEntryConfirm')))) return
-    const { error } = await supabase.from('stock_movements').delete().eq('id', m.id)
-    if (error) return toast(errText(error, t), 'err')
-    toast(t('deleted'))
-    refresh()
-  }
+  const del = useDeleteLine()
 
   const exportCsv = () => {
     if (!data) return
@@ -163,8 +158,8 @@ export function History() {
                                   <Pencil className="size-4" />
                                 </Button>
                               )}
-                              {/* lines of an invoice are voided with the whole invoice (Invoices page) */}
-                              {m.sale_id || m.purchase_id || m.return_id ? null : (
+                              {/* sale / invoice-return lines are voided with the whole invoice (Invoices page) */}
+                              {canDeleteLine(m) && (
                                 <Button size="sm" variant="ghost" onClick={() => del(m)} aria-label={t('delete')} title={t('delete')}>
                                   <Trash2 className="size-4 text-red-600" />
                                 </Button>

@@ -17,6 +17,7 @@ import { fmtNum } from '../lib/units'
 import { fmtMoney } from '../lib/money'
 import { MovementBadge } from './Dashboard'
 import { EditStockLine, type EditableLine } from '../components/EditStockLine'
+import { canDeleteLine, isStockInLine, useDeleteLine } from '../lib/deleteLine'
 
 export function ProductDetail() {
   const { id = '' } = useParams()
@@ -28,6 +29,7 @@ export function ProductDetail() {
   const [editing, setEditing] = useState(false)
   const [adjusting, setAdjusting] = useState<BatchStock | null>(null)
   const [editLine, setEditLine] = useState<EditableLine | null>(null)
+  const delLine = useDeleteLine()
 
   const { data, error, loading, reload } = useLoad(async () => {
     const [catalog, batches, moves] = await Promise.all([
@@ -197,17 +199,25 @@ export function ProductDetail() {
                     <td className="text-stone-500">{authorOf(m)}</td>
                     {isAdmin && (
                       <td className="no-print r">
-                        {(m.type === 'purchase' || m.type === 'return_in') && !m.sale_id && !m.return_id && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => (m.purchase_id ? nav(`/stock-in?edit=${m.purchase_id}`) : setEditLine({ movement: m, product: p }))}
-                            aria-label={t('edit')}
-                            title={m.purchase_id ? t('editPurchaseShort') : t('edit')}
-                          >
-                            <Pencil className="size-4" />
-                          </Button>
-                        )}
+                        <div className="flex justify-end gap-1">
+                          {isStockInLine(m) && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => (m.purchase_id ? nav(`/stock-in?edit=${m.purchase_id}`) : setEditLine({ movement: m, product: p }))}
+                              aria-label={t('edit')}
+                              title={m.purchase_id ? t('editPurchaseShort') : t('edit')}
+                            >
+                              <Pencil className="size-4" />
+                            </Button>
+                          )}
+                          {/* sale / invoice-return lines are voided with the whole invoice (Invoices page) */}
+                          {canDeleteLine(m) && (
+                            <Button size="sm" variant="ghost" onClick={() => delLine(m)} aria-label={t('delete')} title={t('delete')}>
+                              <Trash2 className="size-4 text-red-600" />
+                            </Button>
+                          )}
+                        </div>
                       </td>
                     )}
                   </tr>

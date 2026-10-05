@@ -207,6 +207,7 @@ export function Select({
         createPortal(
           <div
             ref={pop}
+            data-popover
             dir={lang === 'ur' ? 'rtl' : 'ltr'}
             onKeyDown={onKey}
             style={{ position: 'fixed', top: pos.top, bottom: pos.bottom, left: pos.left, width: pos.width, maxHeight: pos.maxH }}

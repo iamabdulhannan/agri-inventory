@@ -132,6 +132,13 @@ export function StockIn() {
   const due = r2(total - paidNum)
 
   const set = (key: number, patch: Partial<Line>) => setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)))
+  // no supplier chosen or typed: use the company of the items as the supplier name
+  const supplierName = () => {
+    if (party.trim()) return party.trim()
+    if (partyId || !isPurchase) return null
+    const cos = [...new Set(lines.map((l) => catalog.byId.get(l.product_id)?.company_name).filter(Boolean) as string[])]
+    return cos.length ? cos.slice(0, 3).join(', ') + (cos.length > 3 ? ' …' : '') : null
+  }
 
   const save = async () => {
     setErr('')
@@ -158,7 +165,7 @@ export function StockIn() {
           qty: Number(l.qty),
           unit_price: l.rate === '' ? null : Number(l.rate),
         })),
-        p_party: party || null,
+        p_party: supplierName(),
         p_reference: reference || null,
         p_note: note || null,
         p_party_id: partyId || null,
@@ -183,7 +190,7 @@ export function StockIn() {
         qty: Number(l.qty),
         unit_price: l.rate === '' ? null : Number(l.rate),
       })),
-      p_party: party || null,
+      p_party: supplierName(),
       p_reference: reference || null,
       p_note: note || null,
       p_party_id: isPurchase && partyId ? partyId : null,

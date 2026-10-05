@@ -13,7 +13,8 @@ import { addDays, fmtDate, fmtMonth, monthOf, monthRange, weekday } from '../lib
 import { useI18n } from '../lib/i18n'
 import { fmtMoney } from '../lib/money'
 import { supabase } from '../lib/supabase'
-import type { CashDay, CashEntry, CashKind } from '../lib/types'
+import type { CashDay, CashKind } from '../lib/types'
+import { CASH_SELECT, describeCash, loadCashItems, type CashEntryFull } from '../lib/cashDetail'
 
 const MANUAL: CashKind[] = ['expense', 'cash_in', 'cash_out']
 const TONE: Record<CashKind, 'green' | 'red' | 'amber' | 'blue' | 'stone' | 'orange'> = {
@@ -48,7 +49,7 @@ export function Roznamcha() {
 let dayFromMonth: string | null = null
 
 function DayView() {
-  const { t, lang } = useI18n()
+  const { t, lang, pick } = useI18n()
   const { org, today, version, isAdmin, refresh } = useOrg()
   const { toast, confirm } = useFeedback()
   const nav = useNavigate()
@@ -62,15 +63,16 @@ function DayView() {
   const { data, error, loading, reload } = useLoad(async () => {
     const [sum, entries] = await Promise.all([
       supabase.rpc('cash_days', { p_org: org.id, p_from: day, p_to: day }),
-      fetchAll<CashEntry>((a, b) =>
-        supabase.from('cash_entries').select('*, parties(name)').eq('org_id', org.id).eq('entry_date', day).order('created_at').range(a, b),
+      fetchAll<CashEntryFull>((a, b) =>
+        supabase.from('cash_entries').select(CASH_SELECT).eq('org_id', org.id).eq('entry_date', day).order('created_at').range(a, b),
       ),
     ])
     if (sum.error) throw sum.error
-    return { sum: (sum.data as CashDay[])[0], entries }
+    const items = await loadCashItems(entries)
+    return { sum: (sum.data as CashDay[])[0], entries, items }
   }, [org.id, day, version])
 
-  const del = async (e: CashEntry) => {
+  const del = async (e: CashEntryFull) => {
     if (!(await confirm(`${t('delete')}?`))) return
     const { error } = await supabase.from('cash_entries').delete().eq('id', e.id)
     if (error) return toast(errText(error, t), 'err')
@@ -80,7 +82,7 @@ function DayView() {
 
   const exportCsv = () =>
     data && downloadCsv(`roznamcha-${day}`, [t('type'), t('party'), t('detail'), t('cashIn'), t('cashOut'), t('by')],
-      data.entries.map((e) => [t(`ck_${e.kind}`), e.parties?.name, e.note, e.amount > 0 ? e.amount : '', e.amount < 0 ? -e.amount : '', e.created_by_name]))
+      data.entries.map((e) => { const x = describeCash(e, data.items, t, lang, pick); return [t(`ck_${e.kind}`), x.party, x.detail, e.amount > 0 ? e.amount : '', e.amount < 0 ? -e.amount : '', e.created_by_name] }))
 
   return (
     <div className="space-y-4">
@@ -101,6 +103,11 @@ function DayView() {
 
       {loading && !data ? <Loading /> : error ? <ErrorBox onRetry={reload}>{errText(error, t)}</ErrorBox> : data && (
         <>
+          {Number(data.sum?.closing ?? 0) < 0 && (
+            <div className="no-print flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              <Wallet className="mt-0.5 size-4 shrink-0" /> {t('negativeCashHint')}
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <Tile label={t('openingCash')} value={fmtMoney(data.sum?.opening ?? 0, lang)} icon={<Wallet className="size-5" />} />
             <Tile label={t('cashIn')} value={fmtMoney(data.sum?.cash_in ?? 0, lang)} tone="green" icon={<ArrowDownCircle className="size-5" />} />
@@ -130,8 +137,8 @@ function DayView() {
                         onClick={() => (e.sale_id ? setReceipt(e.sale_id) : e.party_id ? nav(`/khata/${e.party_id}`) : undefined)}
                       >
                         <td><Badge tone={TONE[e.kind]}>{t(`ck_${e.kind}`)}</Badge></td>
-                        <td>{e.parties?.name}</td>
-                        <td className="text-stone-600">{e.note}</td>
+                        <td className="font-medium">{describeCash(e, data.items, t, lang, pick).party}</td>
+                        <td className="max-w-md text-stone-600">{describeCash(e, data.items, t, lang, pick).detail}</td>
                         <td className="r num font-medium text-brand-700">{e.amount > 0 ? fmtMoney(e.amount, lang) : ''}</td>
                         <td className="r num font-medium text-red-700">{e.amount < 0 ? fmtMoney(-e.amount, lang) : ''}</td>
                         <td className="text-stone-500">{e.created_by_name}</td>
