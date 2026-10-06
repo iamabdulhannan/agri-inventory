@@ -10,9 +10,10 @@ import { fetchAll, useLoad } from '../lib/data'
 import { errText } from '../lib/errors'
 import { fmtDate, monthOf, monthRange } from '../lib/format'
 import { useI18n } from '../lib/i18n'
+import { perKg } from '../lib/loose'
 import { supabase } from '../lib/supabase'
 import { ALL_TYPES, authorOf, type Movement, type MovementType } from '../lib/types'
-import { fmtPack } from '../lib/units'
+import { fmtPack, unitLabel } from '../lib/units'
 import { fmtMoney } from '../lib/money'
 import { MovementBadge } from './Dashboard'
 import { EditStockLine, type EditableLine } from '../components/EditStockLine'
@@ -139,7 +140,7 @@ export function History() {
                         <td>{p ? <ProductName p={p} /> : '—'}</td>
                         <td className="num">{m.batches?.batch_no}</td>
                         <td className="r">{p && <QtyCell packs={Number(m.qty)} p={p} strong />}</td>
-                        <td className="r num">{m.unit_price != null ? fmtMoney(m.unit_price, lang) : ''}</td>
+                        <td className="r num whitespace-nowrap">{m.unit_price == null ? '' : m.loose && p ? `${fmtMoney(perKg(Number(m.unit_price), Number(p.pack_size)), lang)} / ${unitLabel('kg', lang)}` : fmtMoney(m.unit_price, lang)}</td>
                         <td>{m.party}{m.note && <div className="text-xs text-stone-500">{m.note}</div>}</td>
                         <td className="num">{m.reference}</td>
                         <td className="text-stone-500">{authorOf(m)}</td>

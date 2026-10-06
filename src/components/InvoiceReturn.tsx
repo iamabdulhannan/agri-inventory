@@ -9,7 +9,8 @@ import { useI18n } from '../lib/i18n'
 import { fmtMoney, r2 } from '../lib/money'
 import { supabase } from '../lib/supabase'
 import type { Sale } from '../lib/types'
-import { fmtNum } from '../lib/units'
+import { fmtNum, unitLabel } from '../lib/units'
+import { kgFits, kgStep, kgToPacks, packsToKg, perKg } from '../lib/loose'
 import { ProductName } from './domain'
 import { Badge, Button, Card, ErrorBox, Field, Input, useFeedback, Segmented } from './ui'
 
@@ -22,6 +23,8 @@ interface Returnable {
   returned: number
   remaining: number
   rate: number
+  /** sold loose by kg: shown and entered in kg */
+  loose?: boolean
 }
 interface Loaded {
   sale: Sale & { parties: { name: string; phone: string | null } | null }
@@ -71,7 +74,8 @@ export function InvoiceReturn({
     if (e2) return setError(errText(e2, t))
     const rows = ((lines ?? []) as Returnable[]).map((l) => ({ ...l, sold: +l.sold, returned: +l.returned, remaining: +l.remaining, rate: +l.rate }))
     setData({ sale, lines: rows })
-    setQty(Object.fromEntries(rows.map((l) => [l.batch_id, l.remaining > 0 ? String(l.remaining) : '0'])))
+    const size = (l: Returnable) => Number(catalog.byId.get(l.product_id)?.pack_size) || 1
+    setQty(Object.fromEntries(rows.map((l) => [l.batch_id, l.remaining > 0 ? String(l.loose ? packsToKg(l.remaining, size(l)) : l.remaining) : '0'])))
     setRefund('')
     setNote('')
     onLoaded(true)
@@ -118,7 +122,11 @@ export function InvoiceReturn({
 
   const { sale, lines } = data
   const factor = Number(sale.subtotal) > 0 ? Number(sale.total) / Number(sale.subtotal) : 1
-  const value = r2(lines.reduce((s, l) => s + (Number(qty[l.batch_id]) || 0) * l.rate * factor, 0))
+  // loose bag lines are entered in kg; everything is stored in bags
+  const sizeOf = (l: Returnable) => (l.loose ? Number(catalog.byId.get(l.product_id)?.pack_size) || 1 : 1)
+  const shown = (l: Returnable, packs: number) => (l.loose ? packsToKg(packs, sizeOf(l)) : packs)
+  const packsOf = (l: Returnable) => (l.loose ? kgToPacks(Number(qty[l.batch_id]) || 0, sizeOf(l)) : Number(qty[l.batch_id]) || 0)
+  const value = r2(lines.reduce((s, l) => s + packsOf(l) * l.rate * factor, 0))
   const khata = !!sale.party_id
   const refundNum = khata ? (refund === '' ? 0 : Number(refund) || 0) : value
   const credit = r2(value - refundNum)
@@ -128,8 +136,9 @@ export function InvoiceReturn({
   const save = async () => {
     setError('')
     for (const l of lines) {
-      const q = Number(qty[l.batch_id]) || 0
-      if (q < 0 || q > l.remaining) return setError(`${t('errReturnTooMuch')} (${l.batch_no}: ${fmtNum(l.remaining)})`)
+      const q = packsOf(l)
+      if (q < 0 || q > l.remaining) return setError(`${t('errReturnTooMuch')} (${l.batch_no}: ${fmtNum(shown(l, l.remaining), 3)})`)
+      if (l.loose && !kgFits(Number(qty[l.batch_id]) || 0, sizeOf(l))) return setError(t('errKgStep', { size: fmtNum(sizeOf(l)), step: fmtNum(kgStep(sizeOf(l)), 3) }))
     }
     if (!(value > 0)) return setError(t('errQty'))
     if (refundNum < 0 || refundNum > value) return setError(t('errInvalidRefund'))
@@ -138,7 +147,7 @@ export function InvoiceReturn({
       p_org: org.id,
       p_sale: sale.id,
       p_date: date,
-      p_lines: lines.filter((l) => Number(qty[l.batch_id]) > 0).map((l) => ({ batch_id: l.batch_id, qty: Number(qty[l.batch_id]) })),
+      p_lines: lines.filter((l) => packsOf(l) > 0).map((l) => ({ batch_id: l.batch_id, qty: packsOf(l) })),
       p_refund: refundNum,
       p_note: note || null,
     })
@@ -189,19 +198,20 @@ export function InvoiceReturn({
               <tbody>
                 {lines.map((l) => {
                   const p = catalog.byId.get(l.product_id)
-                  const q = Number(qty[l.batch_id]) || 0
+                  const q = packsOf(l)
                   const over = q > l.remaining
+                  const kg = l.loose ? ` ${unitLabel('kg', lang)}` : ''
                   return (
                     <tr key={l.batch_id} className={cx(l.remaining <= 0 && 'opacity-50')}>
                       <td>{p ? <ProductName p={p} /> : '—'}</td>
                       <td className="num whitespace-nowrap">{l.batch_no}<div className="text-xs text-stone-500">{fmtDate(l.expiry_date, lang)}</div></td>
-                      <td className="r num">{fmtNum(l.sold, 3)}</td>
-                      <td className="r num text-stone-500">{l.returned ? fmtNum(l.returned, 3) : ''}</td>
+                      <td className="r num whitespace-nowrap">{fmtNum(shown(l, l.sold), 3)}{kg}</td>
+                      <td className="r num whitespace-nowrap text-stone-500">{l.returned ? `${fmtNum(shown(l, l.returned), 3)}${kg}` : ''}</td>
                       <td className="r">
                         <Input
                           type="number"
                           min="0"
-                          max={l.remaining}
+                          max={shown(l, l.remaining)}
                           step="any"
                           inputMode="decimal"
                           className={cx('num ms-auto h-9 w-24 text-end', over && 'border-red-500')}
@@ -210,7 +220,7 @@ export function InvoiceReturn({
                           onChange={(e) => setQty((s) => ({ ...s, [l.batch_id]: e.target.value }))}
                         />
                       </td>
-                      <td className="r num">{fmtMoney(l.rate, lang)}</td>
+                      <td className="r num whitespace-nowrap">{fmtMoney(l.loose ? perKg(l.rate, sizeOf(l)) : l.rate, lang)}{kg && ` /${kg}`}</td>
                       <td className="r num font-medium">{q > 0 ? fmtMoney(r2(q * l.rate * factor), lang) : ''}</td>
                     </tr>
                   )

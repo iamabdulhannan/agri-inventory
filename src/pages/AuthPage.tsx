@@ -1,6 +1,6 @@
-import { BarChart3, Building2, CalendarClock, CheckCircle2, Languages, MailCheck, Ruler, UserPlus } from 'lucide-react'
+import { Building2, CheckCircle2, MailCheck, UserPlus } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
-import { LangToggle, Logo, ThemeToggle } from '../components/Layout'
+import { Logo } from '../components/Layout'
 import { Button, ErrorBox, Field, Input, Modal, PasswordInput } from '../components/ui'
 import { cx } from '../lib/cx'
 import { errText } from '../lib/errors'
@@ -8,6 +8,7 @@ import { useI18n } from '../lib/i18n'
 import { EMAILS_ENABLED } from '../lib/config'
 import { supabase, supabaseConfigured } from '../lib/supabase'
 import type { Role } from '../lib/types'
+import { Landing } from './Landing'
 
 type Mode = 'signin' | 'create' | 'join' | 'forgot' | 'check'
 
@@ -25,43 +26,8 @@ export function AuthPage() {
   const [mode, setMode] = useState<Mode | null>(() => (new URLSearchParams(location.search).get('code') ? 'join' : null))
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#14532d] via-[#166534] to-emerald-700">
-      <header className="mx-auto flex max-w-6xl items-center justify-between px-5 py-5">
-        <Logo light />
-        <div className="flex items-center gap-2">
-          <ThemeToggle className="text-white/80 hover:bg-white/10 hover:text-white" />
-          <LangToggle />
-          <Button variant="secondary" onClick={() => setMode('signin')}>{t('signIn')}</Button>
-        </div>
-      </header>
-
-      <section className="mx-auto grid max-w-6xl items-center gap-10 px-5 pt-8 pb-16 lg:grid-cols-2 lg:pt-16">
-        <div className="text-white">
-          <h1 className="text-4xl font-bold leading-tight tracking-tight lg:text-5xl">{t('landingTitle')}</h1>
-          <p className="mt-4 max-w-xl text-lg text-white/85">{t('landingText')}</p>
-          <div className="mt-8 flex flex-wrap gap-3">
-            <Button size="lg" variant="light" onClick={() => setMode('create')}>
-              <Building2 className="size-5" /> {t('createOrg')}
-            </Button>
-            <Button size="lg" variant="outlineLight" onClick={() => setMode('join')}>
-              <UserPlus className="size-5" /> {t('joinOrg')}
-            </Button>
-          </div>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          {[
-            { icon: CalendarClock, text: t('feat1') },
-            { icon: BarChart3, text: t('feat2') },
-            { icon: Ruler, text: t('feat3') },
-            { icon: Languages, text: t('feat4') },
-          ].map(({ icon: Icon, text }) => (
-            <div key={text} className="rounded-2xl bg-white/10 p-5 text-white ring-1 ring-white/15 backdrop-blur">
-              <Icon className="size-7 text-[#bbf7d0]" />
-              <p className="mt-3 font-medium">{text}</p>
-            </div>
-          ))}
-        </div>
-      </section>
+    <div className="min-h-screen bg-page">
+      <Landing onAction={setMode} />
 
       {removed && (
         <div className="fixed inset-x-0 top-0 z-40 bg-amber-500 px-4 py-2.5 text-center text-sm font-medium text-white">{t('signedOutRemoved')}</div>

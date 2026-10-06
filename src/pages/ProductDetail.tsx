@@ -11,9 +11,10 @@ import { fetchAll, useLoad } from '../lib/data'
 import { errText } from '../lib/errors'
 import { fmtDate } from '../lib/format'
 import { useI18n } from '../lib/i18n'
+import { perKg } from '../lib/loose'
 import { supabase } from '../lib/supabase'
 import { authorOf, type BatchStock, type Movement } from '../lib/types'
-import { fmtNum } from '../lib/units'
+import { fmtNum, unitLabel } from '../lib/units'
 import { fmtMoney } from '../lib/money'
 import { MovementBadge } from './Dashboard'
 import { EditStockLine, type EditableLine } from '../components/EditStockLine'
@@ -193,7 +194,7 @@ export function ProductDetail() {
                     <td><MovementBadge type={m.type} /></td>
                     <td className="num">{m.batches?.batch_no}</td>
                     <td className="r"><QtyCell packs={Number(m.qty)} p={p} /></td>
-                    <td className="r num">{m.unit_price != null ? fmtMoney(m.unit_price, lang) : ''}</td>
+                    <td className="r num whitespace-nowrap">{m.unit_price == null ? '' : m.loose && p ? `${fmtMoney(perKg(Number(m.unit_price), Number(p.pack_size)), lang)} / ${unitLabel('kg', lang)}` : fmtMoney(m.unit_price, lang)}</td>
                     <td>{m.party}</td>
                     <td className="num">{m.reference}</td>
                     <td className="text-stone-500">{authorOf(m)}</td>

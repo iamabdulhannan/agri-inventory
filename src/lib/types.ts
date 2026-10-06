@@ -119,6 +119,8 @@ export interface Movement {
   purchase_id?: string | null
   return_id?: string | null
   unit_price?: number | null
+  /** bag sold loose by kg */
+  loose?: boolean
   unit_cost?: number | null
 }
 

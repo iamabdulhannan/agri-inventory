@@ -16,18 +16,20 @@ import { fmtMoney, r2 } from '../lib/money'
 import { loadParties } from '../lib/parties'
 import { supabase } from '../lib/supabase'
 import { OUT_TYPES, type BatchStock, type MovementType } from '../lib/types'
-import { fmtNum, fmtTotal } from '../lib/units'
+import { fmtNum, fmtTotal, unitLabel } from '../lib/units'
+import { canSellLoose, kgFits, kgStep, kgToPacks, packsToKg, perKg, perPack, type SaleUnit } from '../lib/loose'
 
 interface Line {
   key: number
   product_id: string
   batch_id: string // '' = automatic, earliest expiry first
   qty: string
-  rate: string // sale price per pack
+  rate: string // sale price per pack (or per kg when sold loose)
+  unit: SaleUnit // bags can be sold loose by kg
 }
 const rateOf = (n?: number | null) => (Number(n) > 0 ? String(Number(n)) : '')
 let seq = 1
-const blank = (product_id = '', batch_id = '', qty = '', rate = ''): Line => ({ key: seq++, product_id, batch_id, qty, rate })
+const blank = (product_id = '', batch_id = '', qty = '', rate = ''): Line => ({ key: seq++, product_id, batch_id, qty, rate, unit: 'pack' })
 
 export function StockOut() {
   const { t, lang } = useI18n()
@@ -90,8 +92,26 @@ export function StockOut() {
   /** batches this entry type may take from (sales never use expired stock) */
   const eligible = (productId: string) => (byProduct.get(productId) ?? []).filter((b) => !isSale || b.expiry_date >= date)
   const set = (key: number, patch: Partial<Line>) => setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)))
+  /** line sold loose by kg (only bags) */
+  const looseOf = (l: Line) => l.unit === 'kg' && canSellLoose(catalog.byId.get(l.product_id))
+  const sizeOf = (l: Line) => Number(catalog.byId.get(l.product_id)?.pack_size) || 1
+  /** quantity in packs, as stored */
+  const packsOf = (l: Line) => (looseOf(l) ? kgToPacks(Number(l.qty) || 0, sizeOf(l)) : Number(l.qty) || 0)
+  /** rate per pack, as stored */
+  const packRateOf = (l: Line) => (looseOf(l) ? perPack(Number(l.rate) || 0, sizeOf(l)) : Number(l.rate) || 0)
+  /** line amount exactly as the server calculates it */
+  const amountOf = (l: Line) => r2(packsOf(l) * packRateOf(l))
+  const switchUnit = (l: Line, unit: SaleUnit) => {
+    if (unit === l.unit) return
+    const size = sizeOf(l)
+    const q = Number(l.qty)
+    const r = Number(l.rate)
+    set(l.key, unit === 'kg'
+      ? { unit, qty: q > 0 ? String(packsToKg(q, size)) : l.qty, rate: r > 0 ? String(perKg(r, size)) : l.rate }
+      : { unit, qty: q > 0 ? String(kgToPacks(q, size)) : l.qty, rate: r > 0 ? String(perPack(r, size)) : l.rate })
+  }
 
-  const subtotal = r2(lines.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.rate) || 0), 0))
+  const subtotal = r2(lines.reduce((s, l) => s + amountOf(l), 0))
   const disc = Number(discount) || 0
   const total = r2(subtotal - disc)
   // empty Received: walk-in = paid in full (cash only); khata customer = nothing received (all on credit)
@@ -114,6 +134,7 @@ export function StockOut() {
     for (const l of lines) {
       if (!l.product_id) return setErr(t('errChooseProduct'))
       if (!(Number(l.qty) > 0)) return setErr(t('errQty'))
+      if (looseOf(l) && !kgFits(Number(l.qty), sizeOf(l))) return setErr(t('errKgStep', { size: fmtNum(sizeOf(l)), step: fmtNum(kgStep(sizeOf(l)), 3) }))
       if (isSale && !(Number(l.rate) >= 0 && l.rate !== '')) return setErr(t('errInvalidPrice'))
     }
     if (isSale) {
@@ -126,7 +147,7 @@ export function StockOut() {
       const { data: saleId, error } = await supabase.rpc('record_sale', {
         p_org: org.id,
         p_date: date,
-        p_lines: lines.map((l) => ({ product_id: l.product_id, batch_id: l.batch_id || null, qty: Number(l.qty), unit_price: Number(l.rate) })),
+        p_lines: lines.map((l) => ({ product_id: l.product_id, batch_id: l.batch_id || null, qty: packsOf(l), unit_price: packRateOf(l), loose: looseOf(l) })),
         p_party_id: partyId || null,
         p_customer_name: partyId ? null : party || null,
         p_discount: disc,
@@ -223,8 +244,13 @@ export function StockOut() {
           const options = eligible(l.product_id)
           const chosen = options.find((b) => b.id === l.batch_id)
           const available = chosen ? chosen.qty : options.reduce((s, b) => s + b.qty, 0)
-          const qty = Number(l.qty)
+          const loose = looseOf(l)
+          const size = Number(p?.pack_size) || 1
+          const qty = packsOf(l)
           const over = qty > available
+          const badStep = loose && Number(l.qty) > 0 && !kgFits(Number(l.qty), size)
+          const kg = unitLabel('kg', lang)
+          const unitName = p ? (loose ? kg : t(`pt_${p.pack_type}`)) : ''
           // preview which batches will be used (earliest expiry first)
           const plan: { b: BatchStock; take: number }[] = []
           if (qty > 0 && !over) {
@@ -236,8 +262,8 @@ export function StockOut() {
               need -= take
             }
           }
-          const lineAmount = (Number(l.qty) || 0) * (Number(l.rate) || 0)
-          const cost = p ? Number(p.purchase_price) : 0
+          const lineAmount = amountOf(l)
+          const cost = p ? Number(p.purchase_price) / (loose ? size : 1) : 0
           return (
             <Card key={l.key} className="p-4">
               <div className="mb-3 flex items-center justify-between">
@@ -251,11 +277,11 @@ export function StockOut() {
               <ProductPicker
                 products={catalog.products.filter((x) => x.qty > 0 || x.id === l.product_id)}
                 value={l.product_id}
-                onChange={(id) => set(l.key, { product_id: id, batch_id: '', rate: rateOf(catalog.byId.get(id)?.sale_price) })}
+                onChange={(id) => set(l.key, { product_id: id, batch_id: '', unit: 'pack', rate: rateOf(catalog.byId.get(id)?.sale_price) })}
               />
 
               {p && (
-                <div className={cx('mt-3 grid gap-3', isSale ? 'sm:grid-cols-2 lg:grid-cols-[2fr_1fr_1fr]' : 'sm:grid-cols-[2fr_1fr]')}>
+                <div className={cx('mt-3 grid gap-3', isSale ? 'sm:grid-cols-2 lg:grid-cols-[2fr_1.3fr_1fr]' : 'sm:grid-cols-[2fr_1fr]')}>
                   <Field label={t('batch')}>
                     <Select value={l.batch_id} onChange={(e) => set(l.key, { batch_id: e.target.value })}>
                       <option value="">{t('batchAuto')}</option>
@@ -271,16 +297,32 @@ export function StockOut() {
                     </Select>
                   </Field>
                   <Field
-                    label={`${t('qtyPacks')} (${t(`pt_${p.pack_type}`)})`}
+                    label={`${t('qtyPacks')} (${unitName})`}
                     required
-                    error={over ? `${t('exceeds')} (${fmtNum(available)})` : undefined}
-                    hint={`${t('available')}: ${fmtNum(available)}${p.pack_unit !== 'pcs' ? ` = ${fmtTotal(available, p.pack_size, p.pack_unit, lang)}` : ''}`}
+                    error={
+                      over ? `${t('exceeds')} (${loose ? `${fmtNum(packsToKg(available, size), 3)} ${kg}` : fmtNum(available)})`
+                      : badStep ? t('errKgStep', { size: fmtNum(size), step: fmtNum(kgStep(size), 3) })
+                      : undefined
+                    }
+                    hint={
+                      loose
+                        ? `${t('available')}: ${fmtNum(packsToKg(available, size), 3)} ${kg} (${fmtNum(available, 3)} ${t(`pt_${p.pack_type}`)})`
+                        : `${t('available')}: ${fmtNum(available)}${p.pack_unit !== 'pcs' ? ` = ${fmtTotal(available, p.pack_size, p.pack_unit, lang)}` : ''}`
+                    }
                   >
-                    <Input type="number" min="0" step="any" inputMode="decimal" value={l.qty} onChange={(e) => set(l.key, { qty: e.target.value })} />
+                    <div className="flex gap-2">
+                      <Input type="number" min="0" step="any" inputMode="decimal" value={l.qty} onChange={(e) => set(l.key, { qty: e.target.value })} className="min-w-0 flex-1" />
+                      {isSale && canSellLoose(p) && (
+                        <Select value={l.unit} onChange={(e) => switchUnit(l, e.target.value as SaleUnit)} className="w-24 shrink-0" aria-label={t('saleUnit')}>
+                          <option value="pack">{t(`pt_${p.pack_type}`)}</option>
+                          <option value="kg">{kg}</option>
+                        </Select>
+                      )}
+                    </div>
                   </Field>
                   {isSale && (
                     <Field
-                      label={`${t('rate')} / ${t(`pt_${p.pack_type}`)}`}
+                      label={loose ? t('perKgRate') : `${t('rate')} / ${t(`pt_${p.pack_type}`)}`}
                       required
                       hint={
                         lineAmount > 0 ? (
@@ -292,7 +334,7 @@ export function StockOut() {
                               </span>
                             )}
                           </span>
-                        ) : Number(p.sale_price) > 0 ? `${t('mrp')}: ${fmtMoney(p.sale_price, lang)}` : undefined
+                        ) : Number(p.sale_price) > 0 ? `${t('mrp')}: ${fmtMoney(loose ? perKg(Number(p.sale_price), size) : p.sale_price, lang)}${loose ? ` / ${kg}` : ''}` : undefined
                       }
                     >
                       <Input type="number" min="0" step="any" inputMode="decimal" placeholder="0" value={l.rate} onChange={(e) => set(l.key, { rate: e.target.value })} />

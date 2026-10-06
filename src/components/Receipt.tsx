@@ -11,7 +11,7 @@ import { fmtMoney } from '../lib/money'
 import { usePackLabel } from '../lib/packLabel'
 import { supabase } from '../lib/supabase'
 import type { PackType, PackUnit, Sale } from '../lib/types'
-import { fmtNum } from '../lib/units'
+import { fmtNum, unitLabel } from '../lib/units'
 import { Button, ErrorBox, Loading, Modal } from './ui'
 
 type Paper = '80mm' | 'a4'
@@ -25,6 +25,8 @@ interface Line {
   qty: number
   rate: number
   amount: number
+  /** bag sold loose: qty in kg, rate per kg */
+  loose: boolean
 }
 interface ReceiptData {
   sale: Sale
@@ -37,7 +39,7 @@ async function loadReceipt(saleId: string): Promise<ReceiptData> {
     supabase.from('sales').select('*').eq('id', saleId).single(),
     supabase
       .from('stock_movements')
-      .select('qty, unit_price, batches(products(id, name, name_ur, pack_size, pack_unit, pack_type))')
+      .select('qty, unit_price, loose, batches(products(id, name, name_ur, pack_size, pack_unit, pack_type))')
       .eq('sale_id', saleId)
       .order('created_at'),
   ])
@@ -45,17 +47,22 @@ async function loadReceipt(saleId: string): Promise<ReceiptData> {
   if (e2) throw e2
   // FEFO may split one item over several batches: merge them back per product + rate
   const map = new Map<string, Line>()
-  type Row = { qty: number; unit_price: number; batches: { products: { id: string; name: string; name_ur: string | null; pack_size: number; pack_unit: PackUnit; pack_type: PackType } } }
+  type Row = { qty: number; unit_price: number; loose?: boolean; batches: { products: { id: string; name: string; name_ur: string | null; pack_size: number; pack_unit: PackUnit; pack_type: PackType } } }
   for (const m of (moves ?? []) as unknown as Row[]) {
     const p = m.batches.products
-    const key = `${p.id}|${m.unit_price}`
-    const qty = -Number(m.qty)
+    const loose = !!m.loose
+    const key = `${p.id}|${m.unit_price}|${loose}`
+    const packs = -Number(m.qty)
+    const amount = packs * Number(m.unit_price)
+    // loose bags are shown in kg with a per-kg rate
+    const size = Number(p.pack_size) || 1
+    const qty = loose ? packs * size : packs
     const cur = map.get(key)
     if (cur) {
       cur.qty += qty
-      cur.amount += qty * Number(m.unit_price)
+      cur.amount += amount
     } else {
-      map.set(key, { key, name: p.name, name_ur: p.name_ur, pack: { pack_size: Number(p.pack_size), pack_unit: p.pack_unit, pack_type: p.pack_type }, qty, rate: Number(m.unit_price), amount: qty * Number(m.unit_price) })
+      map.set(key, { key, name: p.name, name_ur: p.name_ur, pack: { pack_size: size, pack_unit: p.pack_unit, pack_type: p.pack_type }, qty, rate: loose ? Number(m.unit_price) / size : Number(m.unit_price), amount, loose })
     }
   }
   let party: ReceiptData['party'] = null
@@ -112,7 +119,7 @@ function ReceiptView({ data, paper }: { data: ReceiptData; paper: Paper }) {
                 {pick(l.name, l.name_ur)}
                 <div className="num text-[0.85em]">{label(l.pack)}</div>
               </td>
-              <td className="num py-0.5 text-end">{fmtNum(l.qty, 3)}</td>
+              <td className="num py-0.5 text-end whitespace-nowrap">{fmtNum(l.qty, 3)}{l.loose && ` ${unitLabel('kg', lang)}`}</td>
               <td className="num py-0.5 text-end">{fmtNum(l.rate)}</td>
               <td className="num py-0.5 text-end">{fmtNum(l.amount)}</td>
             </tr>
