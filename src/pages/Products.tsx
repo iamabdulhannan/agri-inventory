@@ -7,6 +7,7 @@ import { ProductForm } from '../components/ProductForm'
 import { FilterChip, FilterMenu, FilterOptions, FilterSection } from '../components/FilterMenu'
 import { Badge, Button, Card, Checkbox, Empty, ErrorBox, Loading, PageHeader, Select, useFeedback } from '../components/ui'
 import { daysBetween } from '../lib/format'
+import { isLowStock } from '../lib/stockLevel'
 import type { ProductStock } from '../lib/types'
 import { useOrg } from '../lib/app'
 import { useCatalog } from '../lib/catalog'
@@ -39,10 +40,9 @@ export function Products() {
 
   const alertDays = org.expiry_alert_days ?? 60
   const stockOf = useMemo(() => {
-    const isLow = (p: ProductStock) => p.qty > 0 && p.min_stock > 0 && p.qty <= p.min_stock
     const isExpiring = (p: ProductStock) => !!p.next_expiry && daysBetween(today, p.next_expiry) <= alertDays
     return (p: ProductStock, f: StockFilter) =>
-      f === 'all' ? true : f === 'in' ? p.qty > 0 : f === 'out' ? p.qty <= 0 : f === 'low' ? isLow(p) : isExpiring(p)
+      f === 'all' ? true : f === 'in' ? p.qty > 0 : f === 'out' ? p.qty <= 0 : f === 'low' ? isLowStock(p) : isExpiring(p)
   }, [today, alertDays])
 
   // everything except the stock filter: the stock buttons show counts of this list

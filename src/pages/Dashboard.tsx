@@ -1,5 +1,5 @@
 import { AlertTriangle, ArrowDownToLine, ArrowUpFromLine, BarChart3, BookUser, CheckCircle2, Coins, Droplets, HandCoins, Landmark, Package, TrendingDown, TrendingUp, Wallet, Weight } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { ExpiryTable } from '../components/ExpiryTable'
 import { ProductName, QtyCell } from '../components/domain'
@@ -11,9 +11,10 @@ import { useLoad } from '../lib/data'
 import { errText } from '../lib/errors'
 import { fmtDate, fmtDateTime } from '../lib/format'
 import { useI18n } from '../lib/i18n'
+import { isLowStock } from '../lib/stockLevel'
 import { supabase } from '../lib/supabase'
 import { authorOf, type ExpiryAlert, type MoneySummary, type Movement } from '../lib/types'
-import { fmtMoney } from '../lib/money'
+import { fmtMoney, fmtMoneyShort } from '../lib/money'
 import { fmtBase, fmtNum, totalsByMeasure } from '../lib/units'
 
 export function Dashboard() {
@@ -52,7 +53,7 @@ export function Dashboard() {
   const { catalog, alerts, todayMv, recent, money } = data
   const active = catalog.products.filter((p) => p.is_active)
   const totals = totalsByMeasure(active, (p) => ({ packs: Math.max(0, p.qty), size: p.pack_size, unit: p.pack_unit }))
-  const low = active.filter((p) => p.min_stock > 0 && p.qty <= p.min_stock).sort((a, b) => a.qty - b.qty)
+  const low = active.filter(isLowStock).sort((a, b) => a.qty - b.qty)
   const expired = alerts.filter((a) => a.days_left < 0)
   const todayIn = todayMv.filter((m) => m.qty > 0).length
   const todayOut = todayMv.filter((m) => m.qty < 0).length
@@ -100,12 +101,12 @@ export function Dashboard() {
       {/* 3. Money */}
       {money && (
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
-          <Stat icon={<Coins className="size-5" />} label={t('todaySales')} value={fmtMoney(money.today_sales, lang)} sub={`${t('profit')}: ${fmtMoney(money.today_profit, lang)}`} onClick={() => nav('/sales')} />
-          <Stat icon={<TrendingUp className="size-5" />} label={t('monthSales')} value={fmtMoney(money.month_sales, lang)} sub={`${t('profit')}: ${fmtMoney(money.month_profit, lang)}`} onClick={() => nav('/reports?tab=profit')} />
-          <Stat icon={<Wallet className="size-5" />} label={t('cashInHand')} value={fmtMoney(money.cash_in_hand, lang)} onClick={() => nav('/roznamcha')} />
-          <Stat icon={<HandCoins className="size-5" />} label={t('totalReceivable')} value={fmtMoney(money.receivable, lang)} tone={money.receivable > 0 ? 'amber' : undefined} onClick={() => nav('/khata?kind=customer')} />
-          <Stat icon={<Landmark className="size-5" />} label={t('totalPayable')} value={fmtMoney(money.payable, lang)} tone={money.payable > 0 ? 'red' : undefined} onClick={() => nav('/khata?kind=supplier')} />
-          <Stat icon={<Package className="size-5" />} label={t('stockValue')} value={fmtMoney(money.stock_value, lang)} />
+          <Stat icon={<Coins className="size-5" />} label={t('todaySales')} amount={money.today_sales} sub={`${t('profit')}: ${fmtMoney(money.today_profit, lang)}`} onClick={() => nav('/sales')} />
+          <Stat icon={<TrendingUp className="size-5" />} label={t('monthSales')} amount={money.month_sales} sub={`${t('profit')}: ${fmtMoney(money.month_profit, lang)}`} onClick={() => nav('/reports?tab=profit')} />
+          <Stat icon={<Wallet className="size-5" />} label={t('cashInHand')} amount={money.cash_in_hand} onClick={() => nav('/roznamcha')} />
+          <Stat icon={<HandCoins className="size-5" />} label={t('totalReceivable')} amount={money.receivable} tone={money.receivable > 0 ? 'amber' : undefined} onClick={() => nav('/khata?kind=customer')} />
+          <Stat icon={<Landmark className="size-5" />} label={t('totalPayable')} amount={money.payable} tone={money.payable > 0 ? 'red' : undefined} onClick={() => nav('/khata?kind=supplier')} />
+          <Stat icon={<Package className="size-5" />} label={t('stockValue')} amount={money.stock_value} />
         </div>
       )}
 
@@ -185,15 +186,43 @@ function Action({ to, icon, label, className }: { to: string; icon: ReactNode; l
   )
 }
 
-function Stat({ icon, label, value, sub, tone, onClick }: { icon: ReactNode; label: string; value: string; sub?: string; tone?: 'red' | 'amber'; onClick?: () => void }) {
+function Stat({ icon, label, value, amount, sub, tone, onClick }: { icon: ReactNode; label: string; value?: string; amount?: number; sub?: string; tone?: 'red' | 'amber'; onClick?: () => void }) {
   return (
     <div onClick={onClick} className={cx('rounded-xl border border-stone-200 bg-surface p-4 shadow-sm', onClick && 'cursor-pointer hover:border-stone-300')}>
       <div className="flex items-center gap-2 text-sm text-stone-500">
         <span className={cx('grid size-8 shrink-0 place-items-center rounded-lg', tone === 'red' ? 'bg-red-100 text-red-700' : tone === 'amber' ? 'bg-amber-100 text-amber-800' : 'bg-brand-50 text-brand-700')}>{icon}</span>
         {label}
       </div>
-      <div className={cx('num mt-2 text-xl font-bold xl:text-lg 2xl:text-xl', tone === 'red' && 'text-red-700', tone === 'amber' && 'text-amber-800')}>{value}</div>
+      <div className={cx('num mt-2 text-xl font-bold xl:text-lg 2xl:text-xl', tone === 'red' && 'text-red-700', tone === 'amber' && 'text-amber-800')}>
+        {amount != null ? <MoneyValue amount={amount} /> : value}
+      </div>
       {sub && <div className="mt-0.5 text-xs text-stone-500">{sub}</div>}
     </div>
+  )
+}
+
+/** "Rs 1.14 Cr · 11.4M"; tap to see the full amount with commas */
+function MoneyValue({ amount }: { amount: number }) {
+  const { lang } = useI18n()
+  const [full, setFull] = useState(false)
+  const s = fmtMoneyShort(amount, lang)
+  if (!s) return <>{fmtMoney(amount, lang)}</>
+  return (
+    <button
+      type="button"
+      title={fmtMoney(amount, lang)}
+      onClick={(e) => {
+        e.stopPropagation() // the card itself opens its page
+        setFull((f) => !f)
+      }}
+      className="cursor-pointer rounded text-start decoration-dotted underline-offset-4 hover:underline"
+    >
+      {full ? fmtMoney(amount, lang) : (
+        <>
+          {s.main}
+          {s.alt && <span className="ms-1.5 text-sm font-medium text-stone-500">· {s.alt}</span>}
+        </>
+      )}
+    </button>
   )
 }
