@@ -30,7 +30,9 @@ export function KhataList() {
   const { org, version, refresh } = useOrg()
   const nav = useNavigate()
   const [params, setParams] = useSearchParams()
-  const kind: PartyKind = params.get('kind') === 'supplier' ? 'supplier' : 'customer'
+  // 'advance' lists everyone with an advance balance (customers and suppliers)
+  const view: PartyKind | 'advance' = params.get('kind') === 'supplier' ? 'supplier' : params.get('kind') === 'advance' ? 'advance' : 'customer'
+  const kind: PartyKind = view === 'supplier' ? 'supplier' : 'customer'
   const [q, setQ] = useState('')
   const [adding, setAdding] = useState(false)
   const { data, error, loading, reload } = useLoad(() => loadParties(org.id), [org.id, version])
@@ -38,16 +40,19 @@ export function KhataList() {
   const list = useMemo(() => {
     const terms = q.toLowerCase().split(/\s+/).filter(Boolean)
     return (data ?? [])
-      .filter((p) => p.kind === kind)
+      .filter((p) => (view === 'advance' ? p.balance < -0.005 : p.kind === view))
       .filter((p) => terms.every((x) => `${p.name} ${p.phone ?? ''} ${p.address ?? ''}`.toLowerCase().includes(x)))
-      .sort((a, b) => b.balance - a.balance || a.name.localeCompare(b.name))
-  }, [data, kind, q])
+      .sort((a, b) => (view === 'advance' ? a.balance - b.balance : b.balance - a.balance) || a.name.localeCompare(b.name))
+  }, [data, view, q])
 
   const receivable = (data ?? []).filter((p) => p.kind === 'customer' && p.balance > 0).reduce((s, p) => s + p.balance, 0)
   const payable = (data ?? []).filter((p) => p.kind === 'supplier' && p.balance > 0).reduce((s, p) => s + p.balance, 0)
+  const advances = (data ?? []).filter((p) => p.balance < -0.005)
+  const advanceIn = -advances.filter((p) => p.kind === 'customer').reduce((s, p) => s + p.balance, 0)
+  const advanceOut = -advances.filter((p) => p.kind === 'supplier').reduce((s, p) => s + p.balance, 0)
 
   const exportCsv = () =>
-    downloadCsv(`khata-${kind}s`, [t('name'), t('phone'), t('address'), t('balance'), t('lastActivity')],
+    downloadCsv(`khata-${view === 'advance' ? 'advances' : `${kind}s`}`, [t('name'), t('phone'), t('address'), t('balance'), t('lastActivity')],
       list.map((p) => [p.name, p.phone, p.address, p.balance, p.last_activity]))
 
   return (
@@ -63,25 +68,31 @@ export function KhataList() {
           </>
         }
       />
-      <PrintHeader title={`${t('navKhata')} · ${kind === 'customer' ? t('customers') : t('suppliers')}`} />
+      <PrintHeader title={`${t('navKhata')} · ${view === 'advance' ? t('advanceTab') : kind === 'customer' ? t('customers') : t('suppliers')}`} />
 
-      <div className="mb-4 grid gap-3 sm:grid-cols-2">
-        <button onClick={() => setParams({ kind: 'customer' })} className={cx('rounded-xl border p-4 text-start cursor-pointer', kind === 'customer' ? 'border-amber-300 bg-amber-50' : 'border-stone-200 bg-surface')}>
+      <div className="mb-4 grid gap-3 sm:grid-cols-3">
+        <button onClick={() => setParams({ kind: 'customer' })} className={cx('rounded-xl border p-4 text-start cursor-pointer', view === 'customer' ? 'border-amber-300 bg-amber-50' : 'border-stone-200 bg-surface')}>
           <div className="text-sm text-stone-500">{t('totalReceivable')}</div>
           <div className="num text-2xl font-bold text-amber-800">{fmtMoney(receivable, lang)}</div>
         </button>
-        <button onClick={() => setParams({ kind: 'supplier' })} className={cx('rounded-xl border p-4 text-start cursor-pointer', kind === 'supplier' ? 'border-red-300 bg-red-50' : 'border-stone-200 bg-surface')}>
+        <button onClick={() => setParams({ kind: 'supplier' })} className={cx('rounded-xl border p-4 text-start cursor-pointer', view === 'supplier' ? 'border-red-300 bg-red-50' : 'border-stone-200 bg-surface')}>
           <div className="text-sm text-stone-500">{t('totalPayable')}</div>
           <div className="num text-2xl font-bold text-red-700">{fmtMoney(payable, lang)}</div>
+        </button>
+        <button onClick={() => setParams({ kind: 'advance' })} className={cx('rounded-xl border p-4 text-start cursor-pointer', view === 'advance' ? 'border-sky-200 bg-sky-100/60' : 'border-stone-200 bg-surface')}>
+          <div className="text-sm text-stone-500">{t('totalAdvance')}</div>
+          <div className="num text-2xl font-bold text-sky-800">{fmtMoney(advanceIn, lang)}</div>
+          {advanceOut > 0 && <div className="num mt-0.5 text-xs text-stone-500">{t('supplierAdvance')}: {fmtMoney(advanceOut, lang)}</div>}
         </button>
       </div>
 
       <Tabs
-        value={kind}
+        value={view}
         onChange={(v) => setParams({ kind: v })}
         items={[
           { value: 'customer', label: `${t('customers')} (${(data ?? []).filter((p) => p.kind === 'customer').length})` },
           { value: 'supplier', label: `${t('suppliers')} (${(data ?? []).filter((p) => p.kind === 'supplier').length})` },
+          { value: 'advance', label: `${t('advanceTab')} (${advances.length})` },
         ]}
       />
       <div className="no-print relative mb-3">
@@ -92,7 +103,7 @@ export function KhataList() {
       {loading && !data ? <Loading /> : error ? <ErrorBox onRetry={reload}>{errText(error, t)}</ErrorBox> : (
         <Card className="print-plain">
           {list.length === 0 ? (
-            <Empty>{kind === 'customer' ? t('noCustomers') : t('noSuppliers')}</Empty>
+            <Empty>{view === 'advance' ? t('noAdvances') : kind === 'customer' ? t('noCustomers') : t('noSuppliers')}</Empty>
           ) : (
             <div className="table-wrap">
               <table className="tbl">
@@ -108,7 +119,10 @@ export function KhataList() {
                   {list.map((p) => (
                     <tr key={p.id} className="cursor-pointer" onClick={() => nav(`/khata/${p.id}`)}>
                       <td>
-                        <div className="font-medium">{p.name}</div>
+                        <div className="font-medium">
+                          {p.name}
+                          {view === 'advance' && <Badge className="ms-2">{p.kind === 'customer' ? t('customer') : t('supplier')}</Badge>}
+                        </div>
                         {p.address && <div className="text-xs text-stone-500">{p.address}</div>}
                       </td>
                       <td className="num" dir="ltr">{p.phone}</td>
