@@ -14,6 +14,11 @@ export interface Organization {
   phone: string | null
   expiry_alert_days: number
   timezone: string
+  /** tax registration, printed on audit reports */
+  ntn?: string | null
+  strn?: string | null
+  /** entries dated on or before this day are locked (year closed) */
+  locked_until?: string | null
   created_at: string
 }
 

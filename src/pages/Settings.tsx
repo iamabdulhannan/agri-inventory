@@ -33,12 +33,14 @@ function OrgCard() {
   const [f, setF] = useState(org)
   const [busy, setBusy] = useState(false)
   useEffect(() => setF(org), [org])
+  // NTN / STRN columns exist once migration 012 has been run
+  const hasTax = 'ntn' in org
 
   const save = async () => {
     setBusy(true)
     const { error } = await supabase
       .from('organizations')
-      .update({ name: f.name.trim(), address: f.address?.trim() || null, phone: f.phone?.trim() || null, expiry_alert_days: Math.min(365, Math.max(1, Number(f.expiry_alert_days) || 60)) })
+      .update({ name: f.name.trim(), address: f.address?.trim() || null, phone: f.phone?.trim() || null, ...(hasTax ? { ntn: f.ntn?.trim() || null, strn: f.strn?.trim() || null } : {}), expiry_alert_days: Math.min(365, Math.max(1, Number(f.expiry_alert_days) || 60)) })
       .eq('id', org.id)
     setBusy(false)
     if (error) return toast(errText(error, t), 'err')
@@ -53,6 +55,8 @@ function OrgCard() {
         <Field label={t('orgName')}><Input value={f.name} disabled={!isAdmin} onChange={(e) => setF({ ...f, name: e.target.value })} /></Field>
         <Field label={t('phone')}><Input value={f.phone ?? ''} disabled={!isAdmin} onChange={(e) => setF({ ...f, phone: e.target.value })} dir="ltr" /></Field>
         <Field label={t('address')} className="sm:col-span-2"><Input value={f.address ?? ''} disabled={!isAdmin} onChange={(e) => setF({ ...f, address: e.target.value })} /></Field>
+        {hasTax && <Field label={t('ntn')} optional hint={t('ntnHint')}><Input value={f.ntn ?? ''} disabled={!isAdmin} onChange={(e) => setF({ ...f, ntn: e.target.value })} dir="ltr" /></Field>}
+        {hasTax && <Field label={t('strn')} optional><Input value={f.strn ?? ''} disabled={!isAdmin} onChange={(e) => setF({ ...f, strn: e.target.value })} dir="ltr" /></Field>}
         <Field label={t('alertDays')} hint={t('alertDaysHint')}>
           <Input type="number" min={1} max={365} value={f.expiry_alert_days} disabled={!isAdmin} onChange={(e) => setF({ ...f, expiry_alert_days: Number(e.target.value) })} />
         </Field>

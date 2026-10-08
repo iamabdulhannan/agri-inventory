@@ -60,6 +60,9 @@ export function PrintHeader({ title, subtitle }: { title: string; subtitle?: Rea
     <div className="print-only mb-3 border-b border-stone-300 pb-2">
       <div className="text-lg font-bold">{org?.name}</div>
       {(org?.address || org?.phone) && <div className="text-xs">{[org?.address, org?.phone].filter(Boolean).join(' · ')}</div>}
+      {(org?.ntn || org?.strn) && (
+        <div className="num text-xs">{[org?.ntn && `${t('ntn')}: ${org.ntn}`, org?.strn && `${t('strn')}: ${org.strn}`].filter(Boolean).join(' · ')}</div>
+      )}
       <div className="mt-1 text-base font-semibold">{title}</div>
       {subtitle && <div className="text-sm">{subtitle}</div>}
       <div className="text-xs text-stone-500">

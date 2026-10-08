@@ -18,6 +18,7 @@ import { NoOrg } from './pages/NoOrg'
 import { ProductDetail } from './pages/ProductDetail'
 import { Products } from './pages/Products'
 import { Reports } from './pages/Reports'
+import { Audit } from './pages/Audit'
 import { SettingsPage } from './pages/Settings'
 import { StockIn } from './pages/StockIn'
 import { StockOut } from './pages/StockOut'
@@ -60,6 +61,7 @@ function Root() {
         <Route path="expiry" element={<ExpiryPage />} />
         <Route path="history" element={<History />} />
         <Route path="reports" element={<Reports />} />
+        <Route path="audit" element={<Audit />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

@@ -25,6 +25,7 @@ const MAP: [RegExp, TKey][] = [
   [/USE_PROFILE/, 'errUseProfile'],
   [/CANNOT_REMOVE_SELF/, 'errCannotRemoveSelf'],
   [/EDIT_VIA_INVOICE/, 'errEditViaInvoice'],
+  [/PERIOD_LOCKED/, 'errPeriodLocked'],
   [/\bNOT_FOUND\b/, 'errNotFound'],
   [/same_password|should be different from the old/i, 'errSamePassword'],
   [/products_unique_variant/, 'errDuplicateProduct'],

@@ -1,6 +1,6 @@
 import {
   AlertTriangle, ArrowDownToLine, ArrowUpFromLine, BarChart3, BookUser, CalendarClock, CheckCircle2, ChevronRight, FileText, NotebookPen,
-  History, LayoutDashboard, LogOut, Menu, Moon, Package, PanelLeftClose, PanelLeftOpen, Settings, Sprout, Sun, X,
+  History, LayoutDashboard, LogOut, Menu, Moon, Package, PanelLeftClose, PanelLeftOpen, Settings, ShieldCheck, Sprout, Sun, X,
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
@@ -14,7 +14,7 @@ import { fmtPack } from '../lib/units'
 import { Badge } from './ui'
 import { cx } from '../lib/cx'
 
-const NAV: { to: string; key: TKey; icon: typeof Package; end?: boolean }[] = [
+const NAV: { to: string; key: TKey; icon: typeof Package; end?: boolean; admin?: boolean }[] = [
   { to: '/', key: 'navDashboard', icon: LayoutDashboard, end: true },
   { to: '/products', key: 'navProducts', icon: Package },
   { to: '/stock-in', key: 'navStockIn', icon: ArrowDownToLine },
@@ -25,6 +25,7 @@ const NAV: { to: string; key: TKey; icon: typeof Package; end?: boolean }[] = [
   { to: '/expiry', key: 'navExpiry', icon: CalendarClock },
   { to: '/history', key: 'navLedger', icon: History },
   { to: '/reports', key: 'navReports', icon: BarChart3 },
+  { to: '/audit', key: 'navAudit', icon: ShieldCheck, admin: true },
   { to: '/settings', key: 'navSettings', icon: Settings },
 ]
 const MOBILE = ['/', '/stock-in', '/stock-out', '/khata']
@@ -136,6 +137,8 @@ function ExpiryBar() {
 
 export function Layout() {
   const { org, profile, session, role, signOut } = useOrg()
+  // owner / admin only items (the audit trail is admin-only in the database too)
+  const nav = NAV.filter((n) => !n.admin || role === 'owner' || role === 'admin')
   const { t } = useI18n()
   const loc = useLocation()
   const [more, setMore] = useState(false)
@@ -234,7 +237,7 @@ export function Layout() {
           style={{ top: topH, height: `calc(100vh - ${topH}px)` }}
         >
           <nav className="flex flex-col gap-1">
-            {NAV.map(({ to, key, icon: Icon, end }) => (
+            {nav.map(({ to, key, icon: Icon, end }) => (
               <NavLink
                 key={to}
                 to={to}
@@ -284,7 +287,7 @@ export function Layout() {
 
       {/* Mobile bottom navigation */}
       <nav className="no-print fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-stone-200 bg-surface pb-[env(safe-area-inset-bottom)] lg:hidden">
-        {NAV.filter((n) => MOBILE.includes(n.to)).map(({ to, key, icon: Icon, end }) => (
+        {nav.filter((n) => MOBILE.includes(n.to)).map(({ to, key, icon: Icon, end }) => (
           <NavLink key={to} to={to} end={end} className={({ isActive }) => cx('flex flex-col items-center gap-0.5 py-2 text-[11px] font-medium', isActive ? 'text-brand-700' : 'text-stone-500')}>
             <Icon className="size-5" />
             <span className="truncate">{t(key)}</span>
@@ -302,7 +305,7 @@ export function Layout() {
               <button onClick={() => setMore(false)} className="p-1 cursor-pointer"><X className="size-5" /></button>
             </div>
             <div className="grid grid-cols-2 gap-2">
-              {NAV.filter((n) => !MOBILE.includes(n.to)).map(({ to, key, icon: Icon }) => (
+              {nav.filter((n) => !MOBILE.includes(n.to)).map(({ to, key, icon: Icon }) => (
                 <NavLink key={to} to={to} className="flex items-center gap-3 rounded-xl bg-stone-50 px-4 py-3 text-sm font-medium">
                   <Icon className="size-5 text-brand-700" /> {t(key)}
                 </NavLink>

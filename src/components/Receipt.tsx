@@ -92,6 +92,7 @@ function ReceiptView({ data, paper }: { data: ReceiptData; paper: Paper }) {
         <div className={cx('font-bold', paper === '80mm' ? 'text-base' : 'text-xl')}>{org.name}</div>
         {org.address && <div>{org.address}</div>}
         {org.phone && <div dir="ltr">{org.phone}</div>}
+        {org.ntn && <div className="num">{t('ntn')}: {org.ntn}</div>}
       </div>
       <div className="my-2 border-t border-dashed border-black" />
       <div className={row}>
