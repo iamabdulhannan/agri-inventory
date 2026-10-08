@@ -17,7 +17,7 @@ import { loadParties } from '../lib/parties'
 import { supabase } from '../lib/supabase'
 import { OUT_TYPES, type BatchStock, type MovementType } from '../lib/types'
 import { fmtNum, fmtTotal, unitLabel } from '../lib/units'
-import { canSellLoose, kgFits, kgStep, kgToPacks, packsToKg, perKg, perPack, type SaleUnit } from '../lib/loose'
+import { canSellLoose, exceeds, kgFits, kgToPacks, packsToKg, perKg, perPack, type SaleUnit } from '../lib/loose'
 
 interface Line {
   key: number
@@ -134,7 +134,7 @@ export function StockOut() {
     for (const l of lines) {
       if (!l.product_id) return setErr(t('errChooseProduct'))
       if (!(Number(l.qty) > 0)) return setErr(t('errQty'))
-      if (looseOf(l) && !kgFits(Number(l.qty), sizeOf(l))) return setErr(t('errKgStep', { size: fmtNum(sizeOf(l)), step: fmtNum(kgStep(sizeOf(l)), 3) }))
+      if (looseOf(l) && !kgFits(Number(l.qty))) return setErr(t('errKgStep'))
       if (isSale && !(Number(l.rate) >= 0 && l.rate !== '')) return setErr(t('errInvalidPrice'))
     }
     if (isSale) {
@@ -247,8 +247,8 @@ export function StockOut() {
           const loose = looseOf(l)
           const size = Number(p?.pack_size) || 1
           const qty = packsOf(l)
-          const over = qty > available
-          const badStep = loose && Number(l.qty) > 0 && !kgFits(Number(l.qty), size)
+          const over = exceeds(qty, available)
+          const badStep = loose && Number(l.qty) > 0 && !kgFits(Number(l.qty))
           const kg = unitLabel('kg', lang)
           const unitName = p ? (loose ? kg : t(`pt_${p.pack_type}`)) : ''
           // preview which batches will be used (earliest expiry first)
@@ -301,7 +301,7 @@ export function StockOut() {
                     required
                     error={
                       over ? `${t('exceeds')} (${loose ? `${fmtNum(packsToKg(available, size), 3)} ${kg}` : fmtNum(available)})`
-                      : badStep ? t('errKgStep', { size: fmtNum(size), step: fmtNum(kgStep(size), 3) })
+                      : badStep ? t('errKgStep')
                       : undefined
                     }
                     hint={

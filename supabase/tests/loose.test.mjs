@@ -16,9 +16,9 @@ await db.exec(`
   create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
   grant execute on function auth.uid() to anon, authenticated;
 `)
-for (const f of ['001_schema', '002_one_org_per_user', '003_password_reset', '004_remove_member', '005_sales_khata', '006_sale_returns', '007_opening_stock', '008_edit_stock_in', '009_delete_stock_in_line', '010_loose_sale', '010_loose_sale'])
+for (const f of ['001_schema', '002_one_org_per_user', '003_password_reset', '004_remove_member', '005_sales_khata', '006_sale_returns', '007_opening_stock', '008_edit_stock_in', '009_delete_stock_in_line', '010_loose_sale', '011_precise_qty', '011_precise_qty'])
   await db.exec(R(`../migrations/${f}.sql`))
-console.log('✓ migrations 001-010 applied (010 twice)')
+console.log('✓ migrations 001-011 applied (011 twice)')
 
 let pass = 0, fail = 0
 const ok = (c, m) => { c ? pass++ : fail++; console.log(c ? '  ✓' : '  ✗', m) }
@@ -77,6 +77,20 @@ ok((await as(owner, `select loose from stock_movements where return_id is not nu
 // profit: cost 4000 per bag -> 0.25 bag costs 1000
 const [ps] = await as(owner, `select sum(-qty * unit_cost) c from stock_movements where sale_id=$1`, [sid])
 ok(N(ps.c) === 1000 || ps.c === null, 'cost of 12.5 kg = Rs 1000 (or no cost recorded for opening stock)')
+
+// 60 kg bag: 10 kg = 0.166667 bag (did not fit in 3 decimals before 011)
+const [b60] = await as(owner, `insert into products (org_id, name, category_id, pack_size, pack_unit, pack_type, sale_price) values ($1,'JaVi',$2,60,'kg','bag',11000) returning id`, [org.id, cat.id])
+await as(owner, `select record_stock_in($1,$2,'purchase',$3,null,null,null,null,null,true)`, [org.id, today, J([{ product_id: b60.id, batch_no: 'J-1', expiry_date: '2029-01-01', qty: 2 }])])
+const tenKg = Math.round(10 / 60 * 1e6) / 1e6 // what the app sends: 0.166667
+const sj = (await as(owner, `select record_sale($1,$2,$3) id`, [org.id, today, J([{ product_id: b60.id, qty: tenKg, unit_price: 10800, loose: true }])]))[0].id
+const [sjs] = await as(owner, `select total from sales where id=$1`, [sj])
+ok(N(sjs.total) === 1800, '10 kg of a 60 kg bag at Rs 180/kg = Rs 1800')
+ok(Math.abs(await stock(b60.id) - (2 - tenKg)) < 1e-9, 'stock 2 -> 1.833333 bags (110 kg)')
+for (let i = 0; i < 5; i++) await as(owner, `select record_sale($1,$2,$3)`, [org.id, today, J([{ product_id: b60.id, qty: tenKg, unit_price: 10800, loose: true }])])
+ok(Math.abs(await stock(b60.id) - 1) < 0.00001, 'six sales of 10 kg = 1 bag gone (60 kg left)')
+// sell the last 60 kg as kg: the rounding dust must not block it or stay behind
+await as(owner, `select record_sale($1,$2,$3)`, [org.id, today, J([{ product_id: b60.id, qty: 1, unit_price: 10800, loose: true }])])
+ok(await stock(b60.id) === 0, 'selling the last 60 kg leaves exactly 0 (no dust)')
 
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

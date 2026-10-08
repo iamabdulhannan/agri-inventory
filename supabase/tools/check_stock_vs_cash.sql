@@ -3,8 +3,9 @@
 -- READ ONLY: changes nothing. Run in Supabase -> SQL Editor.
 -- Organization: 1bce58f6-5c65-41e8-93f3-bd3ebb0adaeb (change the id below for another shop).
 --
--- Result: one row per product whose stock value differs from the cash
--- paid for it, with the reason, then the totals at the bottom.
+-- Result: one row per product whose stock value is NOT
+--   (bought on bills + opening stock - cost of what was sold/removed + returns),
+-- with the reason, then the totals at the bottom. Sold stock is not a difference.
 -- =====================================================================
 with org as (
   select id, name from public.organizations where id = '1bce58f6-5c65-41e8-93f3-bd3ebb0adaeb'
@@ -22,12 +23,14 @@ per_product as (
          mv.pack_size || ' ' || mv.pack_unit as pack,
          -- bought with a purchase bill (cash or khata)
          coalesce(sum(round(qty * unit_price, 2)) filter (where type = 'purchase' and purchase_id is not null and unit_price is not null), 0) as billed,
-         -- opening stock: no payment
-         coalesce(sum(qty * coalesce(unit_price, product_rate, 0)) filter (where type = 'purchase' and purchase_id is null), 0) as opening_value,
-         count(*) filter (where type = 'purchase' and purchase_id is null) as opening_lines,
+         -- opening stock / manual stock in: no bill
+         coalesce(sum(qty * coalesce(unit_price, product_rate, 0)) filter (where qty > 0 and purchase_id is null and return_id is null), 0) as opening_value,
+         -- cost of stock that went out (sales, damage, adjustments)
+         coalesce(sum(-qty * coalesce(unit_cost, product_rate, 0)) filter (where qty < 0), 0) as cost_out,
+         -- cost of stock that came back from customer returns
+         coalesce(sum(qty * coalesce(unit_cost, product_rate, 0)) filter (where return_id is not null), 0) as cost_back,
          count(*) filter (where type = 'purchase' and unit_price is null) as lines_without_rate,
-         coalesce(sum(-qty) filter (where qty < 0), 0) as qty_out,
-         string_agg(distinct type::text, ', ') as entry_types
+         count(*) filter (where qty < 0 and unit_cost is null) as outs_without_cost
   from mv
   group by mv.oid, mv.org_name, mv.product_id, mv.product, mv.pack_size, mv.pack_unit
 ),
@@ -35,20 +38,20 @@ rows as (
   select pp.org_name, pp.product, pp.pack,
          ps.qty as stock_qty,
          ps.stock_value,
-         pp.billed as paid_on_bills,
-         round(ps.stock_value - pp.billed, 2) as difference,
+         round(pp.billed + pp.opening_value - pp.cost_out + pp.cost_back, 2) as expected_value,
+         round(ps.stock_value - (pp.billed + pp.opening_value - pp.cost_out + pp.cost_back), 2) as difference,
          concat_ws(' + ',
-           case when pp.opening_lines > 0 then 'opening stock, no payment (' || round(pp.opening_value, 2) || ')' end,
-           case when pp.lines_without_rate > 0 then pp.lines_without_rate || ' line(s) without rate, valued at product rate ' || ps.purchase_price end,
-           case when pp.qty_out > 0 then pp.qty_out || ' removed (' || pp.entry_types || ')' end
+           case when pp.lines_without_rate > 0 then pp.lines_without_rate || ' purchase line(s) without rate: add the rate (Edit purchase)' end,
+           case when pp.outs_without_cost > 0 then pp.outs_without_cost || ' stock-out line(s) valued at today''s product rate' end
          ) as reason
   from per_product pp
   join public.product_stock ps on ps.id = pp.product_id
 )
-select org_name, product, pack, stock_qty, stock_value, paid_on_bills, difference,
+-- only products where stock value is NOT what was bought minus what went out
+select org_name, product, pack, stock_qty, stock_value, expected_value, difference,
        coalesce(nullif(reason, ''), 'rounding of average batch rate (same batch bought at different rates)') as reason
 from rows
-where abs(difference) >= 0.01
+where abs(difference) >= 1
 
 union all
 

@@ -40,6 +40,7 @@ React + Vite + Tailwind on the front end, Supabase (Postgres + Auth) on the back
    8. `supabase/migrations/008_edit_stock_in.sql`: edit purchases and single stock-in lines (owner / admin)
    9. `supabase/migrations/009_delete_stock_in_line.sql`: delete a wrong purchase / stock-in line (owner / admin)
    10. `supabase/migrations/010_loose_sale.sql`: sell bags loose by kg (sale and invoice returns)
+   11. `supabase/migrations/011_precise_qty.sql`: exact loose sales from any bag size (e.g. 10 kg from a 60 kg bag)
 3. Under **Authentication → URL Configuration**:
    - Set **Site URL** to your app URL (`http://localhost:5173` while developing).
    - Add `http://localhost:5173/**` and your production URL `/**` to **Redirect URLs**.

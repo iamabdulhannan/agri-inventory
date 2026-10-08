@@ -10,7 +10,7 @@ import { fmtMoney, r2 } from '../lib/money'
 import { supabase } from '../lib/supabase'
 import type { Sale } from '../lib/types'
 import { fmtNum, unitLabel } from '../lib/units'
-import { kgFits, kgStep, kgToPacks, packsToKg, perKg } from '../lib/loose'
+import { exceeds, kgFits, kgToPacks, packsToKg, perKg } from '../lib/loose'
 import { ProductName } from './domain'
 import { Badge, Button, Card, ErrorBox, Field, Input, useFeedback, Segmented } from './ui'
 
@@ -137,8 +137,8 @@ export function InvoiceReturn({
     setError('')
     for (const l of lines) {
       const q = packsOf(l)
-      if (q < 0 || q > l.remaining) return setError(`${t('errReturnTooMuch')} (${l.batch_no}: ${fmtNum(shown(l, l.remaining), 3)})`)
-      if (l.loose && !kgFits(Number(qty[l.batch_id]) || 0, sizeOf(l))) return setError(t('errKgStep', { size: fmtNum(sizeOf(l)), step: fmtNum(kgStep(sizeOf(l)), 3) }))
+      if (q < 0 || exceeds(q, l.remaining)) return setError(`${t('errReturnTooMuch')} (${l.batch_no}: ${fmtNum(shown(l, l.remaining), 3)})`)
+      if (l.loose && !kgFits(Number(qty[l.batch_id]) || 0)) return setError(t('errKgStep'))
     }
     if (!(value > 0)) return setError(t('errQty'))
     if (refundNum < 0 || refundNum > value) return setError(t('errInvalidRefund'))
@@ -147,7 +147,7 @@ export function InvoiceReturn({
       p_org: org.id,
       p_sale: sale.id,
       p_date: date,
-      p_lines: lines.filter((l) => packsOf(l) > 0).map((l) => ({ batch_id: l.batch_id, qty: packsOf(l) })),
+      p_lines: lines.filter((l) => packsOf(l) > 0).map((l) => ({ batch_id: l.batch_id, qty: Math.min(packsOf(l), l.remaining) })),
       p_refund: refundNum,
       p_note: note || null,
     })
@@ -199,7 +199,7 @@ export function InvoiceReturn({
                 {lines.map((l) => {
                   const p = catalog.byId.get(l.product_id)
                   const q = packsOf(l)
-                  const over = q > l.remaining
+                  const over = exceeds(q, l.remaining)
                   const kg = l.loose ? ` ${unitLabel('kg', lang)}` : ''
                   return (
                     <tr key={l.batch_id} className={cx(l.remaining <= 0 && 'opacity-50')}>

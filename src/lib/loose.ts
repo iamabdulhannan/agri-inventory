@@ -1,9 +1,8 @@
 import type { PackType, PackUnit } from './types'
 
 /**
- * Bags can be sold loose by weight: 12.5 kg from a 50 kg bag = 0.25 bag.
- * Stock is kept in bags with 3 decimals, so the smallest step is bag weight / 1000
- * (50 g for a 50 kg bag).
+ * Bags can be sold loose by weight: 10 kg from a 60 kg bag = 0.166667 bag.
+ * Stock is kept in bags with 6 decimals; kg can be entered to the gram (3 decimals).
  */
 export type SaleUnit = 'pack' | 'kg'
 
@@ -11,14 +10,17 @@ export const canSellLoose = (p: { pack_type: PackType; pack_unit: PackUnit } | u
   !!p && p.pack_type === 'bag' && p.pack_unit === 'kg'
 
 const r3 = (n: number) => Math.round(n * 1000) / 1000
+const r6 = (n: number) => Math.round(n * 1e6) / 1e6
 const r2 = (n: number) => Math.round(n * 100) / 100
 
 /** kg -> bags (rounded to what the database stores) */
-export const kgToPacks = (kg: number, size: number) => r3(kg / size)
-/** true when this many kg can be stored exactly in bags */
-export const kgFits = (kg: number, size: number) => Math.abs(r3(kg / size) - kg / size) < 1e-9
-/** smallest kg step for a bag */
-export const kgStep = (size: number) => size / 1000
+export const kgToPacks = (kg: number, size: number) => r6(kg / size)
+/** kg is entered to the gram at most (3 decimals) */
+export const kgFits = (kg: number) => Math.abs(Math.round(kg * 1000) - kg * 1000) < 1e-6
+/** rounding left over from loose sales (a millionth of a bag) is not real stock */
+export const DUST = 1e-5
+/** more than is available, ignoring rounding dust */
+export const exceeds = (packs: number, available: number) => packs - available > DUST
 /** per-kg rate -> per-bag rate */
 export const perPack = (ratePerKg: number, size: number) => r2(ratePerKg * size)
 /** per-bag rate -> per-kg rate */
