@@ -74,8 +74,9 @@ export function PrintHeader({ title, subtitle }: { title: string; subtitle?: Rea
 
 export function ReportButtons({ onExcel }: { onExcel?: () => void }) {
   const { t } = useI18n()
+  // kept together so layouts that spread their children apart don't separate Excel and Print
   return (
-    <>
+    <div className="flex flex-wrap items-center gap-2">
       {onExcel && (
         <Button variant="secondary" onClick={onExcel}>
           <FileSpreadsheet className="size-4" /> {t('exportExcel')}
@@ -84,7 +85,7 @@ export function ReportButtons({ onExcel }: { onExcel?: () => void }) {
       <Button variant="secondary" onClick={() => window.print()}>
         <Printer className="size-4" /> {t('print')}
       </Button>
-    </>
+    </div>
   )
 }
 

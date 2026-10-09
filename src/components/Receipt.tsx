@@ -108,9 +108,9 @@ function ReceiptView({ data, paper }: { data: ReceiptData; paper: Paper }) {
         <thead>
           <tr className="border-b border-black text-start">
             <th className="py-0.5 text-start font-semibold">{t('item')}</th>
-            <th className="py-0.5 text-end font-semibold">{t('qty')}</th>
-            <th className="py-0.5 text-end font-semibold">{t('rate')}</th>
-            <th className="py-0.5 text-end font-semibold">{t('amount')}</th>
+            <th className="whitespace-nowrap py-0.5 ps-3 text-end font-semibold">{t('qty')}</th>
+            <th className="whitespace-nowrap py-0.5 ps-3 text-end font-semibold">{t('rate')}</th>
+            <th className="whitespace-nowrap py-0.5 ps-3 text-end font-semibold">{t('amount')}</th>
           </tr>
         </thead>
         <tbody>
@@ -120,9 +120,9 @@ function ReceiptView({ data, paper }: { data: ReceiptData; paper: Paper }) {
                 {pick(l.name, l.name_ur)}
                 <div className="num text-[0.85em]">{label(l.pack)}</div>
               </td>
-              <td className="num py-0.5 text-end whitespace-nowrap">{fmtNum(l.qty, 3)}{l.loose && ` ${unitLabel('kg', lang)}`}</td>
-              <td className="num py-0.5 text-end">{fmtNum(l.rate)}</td>
-              <td className="num py-0.5 text-end">{fmtNum(l.amount)}</td>
+              <td className="num whitespace-nowrap py-0.5 ps-3 text-end">{fmtNum(l.qty, 3)}{l.loose && ` ${unitLabel('kg', lang)}`}</td>
+              <td className="num whitespace-nowrap py-0.5 ps-3 text-end">{fmtNum(l.rate)}</td>
+              <td className="num whitespace-nowrap py-0.5 ps-3 text-end">{fmtNum(l.amount)}</td>
             </tr>
           ))}
         </tbody>
