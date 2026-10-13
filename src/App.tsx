@@ -7,6 +7,7 @@ import { I18nProvider } from './lib/i18n'
 import { ThemeProvider } from './lib/theme'
 import { supabase } from './lib/supabase'
 import { AuthPage, ResetPassword } from './pages/AuthPage'
+import { Bank } from './pages/Bank'
 import { Dashboard } from './pages/Dashboard'
 import { ExpiryPage } from './pages/Expiry'
 import { History } from './pages/History'
@@ -58,6 +59,7 @@ function Root() {
         <Route path="khata" element={<KhataList />} />
         <Route path="khata/:id" element={<KhataDetail />} />
         <Route path="roznamcha" element={<Roznamcha />} />
+        <Route path="bank" element={<Bank />} />
         <Route path="expiry" element={<ExpiryPage />} />
         <Route path="history" element={<History />} />
         <Route path="reports" element={<Reports />} />

@@ -1,6 +1,7 @@
-import { AlertTriangle, ArrowDownToLine, ArrowUpFromLine, BarChart3, BookUser, CheckCircle2, Coins, Droplets, HandCoins, Landmark, Package, TrendingDown, TrendingUp, Wallet, Weight } from 'lucide-react'
+import { AlertTriangle, ArrowDownToLine, ArrowUpFromLine, BarChart3, BookUser, CalendarClock, CheckCircle2, Coins, Droplets, FileCheck2, HandCoins, Landmark, Package, ShieldCheck, Sprout, TrendingDown, TrendingUp, Wallet, Weight } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { loadPosition, type MoneyPosition } from '../components/bank/money'
 import { ExpiryTable } from '../components/ExpiryTable'
 import { ProductName, QtyCell } from '../components/domain'
 import { Badge, Card, Empty, ErrorBox, Loading } from '../components/ui'
@@ -9,7 +10,7 @@ import { useOrg } from '../lib/app'
 import { loadCatalog } from '../lib/catalog'
 import { useLoad } from '../lib/data'
 import { errText } from '../lib/errors'
-import { fmtDate, fmtDateTime } from '../lib/format'
+import { daysBetween, fmtDate, fmtDateTime } from '../lib/format'
 import { useI18n } from '../lib/i18n'
 import { isLowStock } from '../lib/stockLevel'
 import { supabase } from '../lib/supabase'
@@ -23,7 +24,7 @@ export function Dashboard() {
   const nav = useNavigate()
 
   const { data, error, loading, reload } = useLoad(async () => {
-    const [catalog, alerts, todayMv, recent, money] = await Promise.all([
+    const [catalog, alerts, todayMv, recent, money, position] = await Promise.all([
       loadCatalog(org.id),
       supabase.from('expiry_alerts').select('*').eq('org_id', org.id).order('expiry_date').limit(500),
       supabase.from('stock_movements').select('qty').eq('org_id', org.id).eq('movement_date', today).limit(5000),
@@ -34,6 +35,8 @@ export function Dashboard() {
         .order('created_at', { ascending: false })
         .limit(10),
       supabase.rpc('money_summary', { p_org: org.id, p_today: today }),
+      // bank, cheques, advances: needs migration 013; no cards without it
+      loadPosition(org.id).catch(() => null),
     ])
     for (const r of [alerts, todayMv, recent]) if (r.error) throw r.error
     return {
@@ -43,6 +46,7 @@ export function Dashboard() {
       recent: (recent.data ?? []) as Movement[],
       // money figures need migration 005; the dashboard still works without it
       money: money.error ? null : ((money.data as MoneySummary[])?.[0] ?? null),
+      position,
     }
   }, [org.id, version, today])
 
@@ -50,7 +54,7 @@ export function Dashboard() {
   if (error) return <ErrorBox onRetry={reload}>{errText(error, t)}</ErrorBox>
   if (!data) return null
 
-  const { catalog, alerts, todayMv, recent, money } = data
+  const { catalog, alerts, todayMv, recent, money, position } = data
   const active = catalog.products.filter((p) => p.is_active)
   const totals = totalsByMeasure(active, (p) => ({ packs: Math.max(0, p.qty), size: p.pack_size, unit: p.pack_unit }))
   const low = active.filter(isLowStock).sort((a, b) => a.qty - b.qty)
@@ -109,6 +113,8 @@ export function Dashboard() {
           <Stat icon={<Package className="size-5" />} label={t('stockValue')} amount={money.stock_value} />
         </div>
       )}
+
+      {position && <MoneyCards p={position} />}
 
       {/* 4. Stock KPIs */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -169,6 +175,59 @@ export function Dashboard() {
       </div>
     </div>
   )
+}
+
+/** Bank, cheques, bank loans, overdue dues, crop advances: only the ones this shop uses */
+function MoneyCards({ p }: { p: MoneyPosition }) {
+  const { t, lang } = useI18n()
+  const { today } = useOrg()
+  const nav = useNavigate()
+  const cards: ReactNode[] = []
+  if (p.accounts.length > 0) {
+    const bank = p.accounts.reduce((s, a) => s + a.balance, 0)
+    cards.push(<Stat key="bank" icon={<Landmark className="size-5" />} label={t('bankDashBank')} amount={bank} sub={t('bankDashAccounts', { n: p.accounts.filter((a) => a.is_active).length })} onClick={() => nav('/bank')} />)
+  }
+  if (p.cheques_in_count > 0 || p.cheques_out_pending > 0) {
+    const sub = [
+      p.cheques_in_count > 0 ? t('bankChequeCount', { n: p.cheques_in_count }) : '',
+      p.cheques_out_pending > 0 ? `${t('bankDashChequesGiven')}: ${fmtMoney(p.cheques_out_pending, lang)}` : '',
+    ].filter(Boolean).join(' · ')
+    cards.push(
+      <Stat key="chq" icon={<FileCheck2 className="size-5" />} label={t('bankChequesInHand')} amount={p.cheques_in_hand}
+        tone={p.cheques_due_week > 0 ? 'amber' : undefined}
+        sub={p.cheques_due_week > 0 ? `${sub} · ${t('bankDashDueWeek', { n: p.cheques_due_week })}` : sub}
+        onClick={() => nav('/bank?tab=cheques')} />,
+    )
+  }
+  if (p.bank_owed > 0) {
+    const late = !!p.next_bank_due && p.next_bank_due < today
+    const left = p.next_bank_due ? daysBetween(today, p.next_bank_due) : null
+    cards.push(
+      <Stat key="owed" icon={<CalendarClock className="size-5" />} label={t('bankYouOweBanks')} amount={p.bank_owed}
+        tone={late ? 'red' : left != null && left <= 30 ? 'amber' : undefined}
+        sub={p.next_bank_due ? (late ? t('bankDashOverdueSince', { date: fmtDate(p.next_bank_due, lang) }) : t('bankDashDue', { date: fmtDate(p.next_bank_due, lang) })) : undefined}
+        onClick={() => nav('/bank?tab=finance')} />,
+    )
+  }
+  if (p.guarantees_expiring > 0) {
+    cards.push(
+      <Stat key="guar" icon={<ShieldCheck className="size-5" />} label={t('bankDashGuarantees')} value={String(p.guarantees_expiring)} tone="amber"
+        sub={t('bankDashGuaranteesSub')} onClick={() => nav('/bank?tab=finance')} />,
+    )
+  }
+  if (p.dues_overdue > 0 || p.dues_next_30 > 0) {
+    cards.push(
+      <Stat key="dues" icon={<AlertTriangle className="size-5" />} label={t('bankDashOverdue')} amount={p.dues_overdue}
+        tone={p.dues_overdue > 0 ? 'red' : undefined}
+        sub={p.dues_next_30 > 0 ? `${t('bankDashNext30')}: ${fmtMoney(p.dues_next_30, lang)}` : undefined}
+        onClick={() => nav('/khata?kind=recovery')} />,
+    )
+  }
+  if (p.crop_advances > 0) {
+    cards.push(<Stat key="adv" icon={<Sprout className="size-5" />} label={t('bankDashAdvances')} amount={p.crop_advances} sub={t('bankDashAdvancesSub')} onClick={() => nav('/khata?kind=advances')} />)
+  }
+  if (cards.length === 0) return null
+  return <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">{cards}</div>
 }
 
 export function MovementBadge({ type }: { type: Movement['type'] }) {

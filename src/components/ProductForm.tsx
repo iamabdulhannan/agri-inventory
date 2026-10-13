@@ -14,7 +14,13 @@ interface SizeRow extends Preset {
   type: PackType
   purchase: string // purchase rate per pack
   mrp: string // sale price per pack
+  credit: string // optional credit (udhaar) price per pack
 }
+/** products.credit_price comes with migration 013 */
+type WithCredit = Product & { credit_price?: number | null }
+const creditValue = (v: string) => (Number(v) > 0 ? Number(v) : null)
+/** save without credit_price when the column does not exist yet (migration 013 not run) */
+const missingCredit = (e: { message?: string } | null) => !!e && /credit_price/.test(e.message ?? '')
 const key = (s: Preset) => `${s.size}|${s.unit}`
 
 /**
@@ -61,7 +67,7 @@ export function ProductForm({
       setCompanyId(product.company_id ?? '')
       const m = measureOf(product.pack_unit)
       setKind(m === 'volume' ? 'liquid' : m === 'weight' ? 'dry' : 'pcs')
-      setSizes([{ size: Number(product.pack_size), unit: product.pack_unit, type: product.pack_type, purchase: product.purchase_price ? String(Number(product.purchase_price)) : '', mrp: product.sale_price ? String(Number(product.sale_price)) : '' }])
+      setSizes([{ size: Number(product.pack_size), unit: product.pack_unit, type: product.pack_type, purchase: product.purchase_price ? String(Number(product.purchase_price)) : '', mrp: product.sale_price ? String(Number(product.sale_price)) : '', credit: Number((product as WithCredit).credit_price) > 0 ? String(Number((product as WithCredit).credit_price)) : '' }])
       setMinStock(String(product.min_stock))
       setNotes(product.notes ?? '')
     } else {
@@ -82,7 +88,7 @@ export function ProductForm({
   const has = (p: Preset) => sizes.some((s) => key(s) === key(p))
 
   const toggle = (p: Preset) => {
-    const row: SizeRow = { ...p, type: suggestPackType(p.size, p.unit), purchase: '', mrp: '' }
+    const row: SizeRow = { ...p, type: suggestPackType(p.size, p.unit), purchase: '', mrp: '', credit: '' }
     if (editing) return setSizes([row])
     setSizes((list) => (has(p) ? list.filter((s) => key(s) !== key(p)) : [...list, row]))
   }
@@ -122,15 +128,15 @@ export function ProductForm({
       }
       if (editing && product) {
         const s = sizes[0]
-        const { error } = await supabase
-          .from('products')
-          .update({ ...base, pack_size: s.size, pack_unit: s.unit, pack_type: s.type, purchase_price: Number(s.purchase) || 0, sale_price: Number(s.mrp) || 0 })
-          .eq('id', product.id)
+        const row = { ...base, pack_size: s.size, pack_unit: s.unit, pack_type: s.type, purchase_price: Number(s.purchase) || 0, sale_price: Number(s.mrp) || 0 }
+        let { error } = await supabase.from('products').update({ ...row, credit_price: creditValue(s.credit) }).eq('id', product.id)
+        if (missingCredit(error)) ({ error } = await supabase.from('products').update(row).eq('id', product.id))
         if (error) throw error
         onSaved([product.id])
       } else {
         const rows = sizes.map((s) => ({ ...base, org_id: org.id, pack_size: s.size, pack_unit: s.unit, pack_type: s.type, purchase_price: Number(s.purchase) || 0, sale_price: Number(s.mrp) || 0 }))
-        const { data, error } = await supabase.from('products').insert(rows).select('id')
+        let { data, error } = await supabase.from('products').insert(rows.map((r, i) => ({ ...r, credit_price: creditValue(sizes[i].credit) }))).select('id')
+        if (missingCredit(error)) ({ data, error } = await supabase.from('products').insert(rows).select('id'))
         if (error) throw error
         onSaved((data ?? []).map((r) => r.id))
       }
@@ -254,18 +260,19 @@ export function ProductForm({
         {/* selected sizes: size, pack type, purchase rate, MRP */}
         {sizes.length > 0 && (
           <div className="mt-4 overflow-hidden rounded-xl border border-stone-200">
-            <div className="hidden grid-cols-[5.5rem_repeat(3,minmax(0,1fr))_2.25rem] gap-3 border-b border-stone-200 bg-stone-50 px-3 py-2 text-xs font-medium text-stone-500 sm:grid">
+            <div className="hidden grid-cols-[5.5rem_repeat(4,minmax(0,1fr))_2.25rem] gap-3 border-b border-stone-200 bg-stone-50 px-3 py-2 text-xs font-medium text-stone-500 sm:grid">
               <span>{t('packSize')}</span>
               <span>{t('packType')}</span>
               <span>{t('purchasePrice')}</span>
               <span>{t('mrp')}</span>
+              <span className="truncate" title={t('saleCreditRateHint')}>{t('saleRateCredit')} <span className="font-normal text-stone-400">({t('optional')})</span></span>
               <span />
             </div>
             <div className="divide-y divide-stone-100">
               {sizes.map((s, i) => {
                 const set = (patch: Partial<SizeRow>) => setSizes((list) => list.map((x, j) => (j === i ? { ...x, ...patch } : x)))
                 return (
-                  <div key={key(s)} className="grid grid-cols-2 items-center gap-3 px-3 py-3 sm:grid-cols-[5.5rem_repeat(3,minmax(0,1fr))_2.25rem]">
+                  <div key={key(s)} className="grid grid-cols-2 items-center gap-3 px-3 py-3 sm:grid-cols-[5.5rem_repeat(4,minmax(0,1fr))_2.25rem]">
                     <span className="num col-span-2 text-base font-semibold text-brand-800 sm:col-span-1">{fmtPack(s.size, s.unit, lang)}</span>
                     <label className="col-span-2 block sm:col-span-1">
                       <span className="mb-1 block text-xs text-stone-500 sm:hidden">{t('packType')}</span>
@@ -283,10 +290,14 @@ export function ProductForm({
                       <span className="mb-1 block text-xs text-stone-500 sm:hidden">{t('mrp')}</span>
                       <Input type="number" min="0" step="any" inputMode="decimal" placeholder="0" value={s.mrp} onChange={(e) => set({ mrp: e.target.value })} />
                     </label>
+                    <label className="block">
+                      <span className="mb-1 block truncate text-xs text-stone-500 sm:hidden">{t('saleRateCredit')} ({t('optional')})</span>
+                      <Input type="number" min="0" step="any" inputMode="decimal" value={s.credit} onChange={(e) => set({ credit: e.target.value })} title={t('saleCreditRateHint')} aria-label={t('saleRateCredit')} />
+                    </label>
                     {!editing ? (
                       <button
                         type="button"
-                        className="col-span-2 grid size-9 place-items-center justify-self-end rounded-lg text-stone-400 hover:bg-red-50 hover:text-red-600 sm:col-span-1 cursor-pointer"
+                        className="grid size-9 place-items-center justify-self-end rounded-lg text-stone-400 hover:bg-red-50 hover:text-red-600 sm:col-span-1 cursor-pointer"
                         onClick={() => toggle(s)}
                         aria-label={t('remove')}
                         title={t('remove')}

@@ -1,6 +1,6 @@
 import {
   AlertTriangle, ArrowDownToLine, ArrowUpFromLine, BarChart3, BookUser, CalendarClock, CheckCircle2, ChevronRight, FileText, NotebookPen,
-  History, LayoutDashboard, LogOut, Menu, Moon, Package, PanelLeftClose, PanelLeftOpen, Settings, ShieldCheck, Sprout, Sun, X,
+  History, Landmark, LayoutDashboard, LogOut, Menu, Moon, Package, PanelLeftClose, PanelLeftOpen, Settings, ShieldCheck, Sprout, Sun, X,
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
@@ -12,6 +12,7 @@ import { supabase } from '../lib/supabase'
 import type { ExpiryAlert } from '../lib/types'
 import { fmtPack } from '../lib/units'
 import { Badge } from './ui'
+import { DuesBar } from './DuesBar'
 import { cx } from '../lib/cx'
 
 const NAV: { to: string; key: TKey; icon: typeof Package; end?: boolean; admin?: boolean }[] = [
@@ -22,6 +23,7 @@ const NAV: { to: string; key: TKey; icon: typeof Package; end?: boolean; admin?:
   { to: '/sales', key: 'navSales', icon: FileText },
   { to: '/khata', key: 'navKhata', icon: BookUser },
   { to: '/roznamcha', key: 'navRoznamcha', icon: NotebookPen },
+  { to: '/bank', key: 'bankNav', icon: Landmark },
   { to: '/expiry', key: 'navExpiry', icon: CalendarClock },
   { to: '/history', key: 'navLedger', icon: History },
   { to: '/reports', key: 'navReports', icon: BarChart3 },
@@ -226,6 +228,7 @@ export function Layout() {
           </div>
         </header>
         {!hideBar && <ExpiryBar />}
+        <DuesBar />
       </div>
 
       <div className="flex">

@@ -28,10 +28,16 @@ interface Line {
   /** bag sold loose: qty in kg, rate per kg */
   loose: boolean
 }
+/** sale row with the money columns of migration 013 (missing before it runs) */
+type SaleRow = Sale & { markup?: number | null; advance_used?: number | null; advance_id?: string | null; due_date?: string | null }
 interface ReceiptData {
-  sale: Sale
+  sale: SaleRow
   lines: Line[]
   party: { name: string; phone: string | null; balance: number } | null
+  /** crop advance the bill was (partly) paid from, e.g. "Potato 2026" */
+  advance: string | null
+  /** bank account / wallet the money was received into (null = cash) */
+  account: string | null
 }
 
 async function loadReceipt(saleId: string): Promise<ReceiptData> {
@@ -65,12 +71,24 @@ async function loadReceipt(saleId: string): Promise<ReceiptData> {
       map.set(key, { key, name: p.name, name_ur: p.name_ur, pack: { pack_size: size, pack_unit: p.pack_unit, pack_type: p.pack_type }, qty, rate: loose ? Number(m.unit_price) / size : Number(m.unit_price), amount, loose })
     }
   }
+  const s = sale as SaleRow
+  const [partyRes, advRes, cashRes] = await Promise.all([
+    s.party_id ? supabase.from('party_balances').select('name, phone, balance').eq('id', s.party_id).single() : null,
+    s.advance_id && Number(s.advance_used) > 0 ? supabase.from('crop_advances').select('crop, season').eq('id', s.advance_id).maybeSingle() : null,
+    Number(s.paid) > 0 ? supabase.from('cash_entries').select('account_id').eq('sale_id', saleId).eq('kind', 'sale').not('account_id', 'is', null).limit(1) : null,
+  ])
   let party: ReceiptData['party'] = null
-  if (sale.party_id) {
-    const { data } = await supabase.from('party_balances').select('name, phone, balance').eq('id', sale.party_id).single()
-    if (data) party = { ...data, balance: Number(data.balance) }
+  if (partyRes?.data) party = { ...partyRes.data, balance: Number(partyRes.data.balance) }
+  // extras are best effort: the receipt still prints if they cannot be read
+  const a = advRes?.data as { crop: string; season: string | null } | null | undefined
+  const advance = Number(s.advance_used) > 0 ? (a ? [a.crop, a.season].filter(Boolean).join(' ') : '') : null
+  let account: string | null = null
+  const accId = (cashRes?.data as { account_id: string | null }[] | null | undefined)?.[0]?.account_id
+  if (accId) {
+    const { data: acc } = await supabase.from('money_accounts').select('name').eq('id', accId).maybeSingle()
+    account = (acc as { name: string } | null)?.name ?? null
   }
-  return { sale: sale as Sale, lines: [...map.values()], party }
+  return { sale: s, lines: [...map.values()], party, advance, account }
 }
 
 /** The printable receipt itself (used for preview and for printing) */
@@ -78,8 +96,10 @@ function ReceiptView({ data, paper }: { data: ReceiptData; paper: Paper }) {
   const { t, lang, pick } = useI18n()
   const { org } = useOrg()
   const label = usePackLabel()
-  const { sale, lines, party } = data
-  const due = Number(sale.total) - Number(sale.paid)
+  const { sale, lines, party, advance, account } = data
+  const markup = Number(sale.markup) || 0
+  const advUsed = Number(sale.advance_used) || 0
+  const due = Math.round((Number(sale.total) - Number(sale.paid) - advUsed) * 100) / 100
   const time = new Date(sale.created_at).toLocaleTimeString(lang === 'ur' ? 'ur-PK' : 'en-GB', { hour: '2-digit', minute: '2-digit' })
   const row = 'flex justify-between gap-3'
   return (
@@ -131,9 +151,20 @@ function ReceiptView({ data, paper }: { data: ReceiptData; paper: Paper }) {
       <div className="num space-y-0.5">
         <div className={row}><span>{t('subtotal')}</span><span>{fmtMoney(sale.subtotal, lang)}</span></div>
         {Number(sale.discount) > 0 && <div className={row}><span>{t('discount')}</span><span>- {fmtMoney(sale.discount, lang)}</span></div>}
+        {markup > 0 && <div className={row}><span>{t('saleMarkup')}</span><span>+ {fmtMoney(markup, lang)}</span></div>}
         <div className={cx(row, 'text-[1.15em] font-bold')}><span>{t('grandTotal')}</span><span>{fmtMoney(sale.total, lang)}</span></div>
-        <div className={row}><span>{t('received')}</span><span>{fmtMoney(sale.paid, lang)}</span></div>
+        {advUsed > 0 && (
+          <div className={row}>
+            <span className="min-w-0">{t('salePaidFromAdvance')}{advance ? ` (${advance})` : ''}</span>
+            <span className="shrink-0">{fmtMoney(advUsed, lang)}</span>
+          </div>
+        )}
+        <div className={row}>
+          <span className="min-w-0">{t('received')}{account && Number(sale.paid) > 0 ? ` (${account})` : ''}</span>
+          <span className="shrink-0">{fmtMoney(sale.paid, lang)}</span>
+        </div>
         {due > 0 && <div className={cx(row, 'font-semibold')}><span>{t('balanceDue')}</span><span>{fmtMoney(due, lang)}</span></div>}
+        {due > 0 && sale.due_date && <div className={cx(row, 'font-semibold')}><span>{t('salePayBy')}</span><span>{fmtDate(sale.due_date, lang)}</span></div>}
         {party && <div className={cx(row, 'border-t border-black pt-0.5 font-semibold')}><span>{t('khataAccount')} {t('balance')}</span><span>{fmtMoney(party.balance, lang)}</span></div>}
       </div>
       <div className="my-2 border-t border-dashed border-black" />

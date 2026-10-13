@@ -1,13 +1,14 @@
 import { PackageSearch, Plus, Search } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { ExpiryBadge, ProductName, QtyCell, ReportButtons, PrintHeader } from '../components/domain'
+import { ExpiryBadge, Highlight, ProductName, QtyCell, ReportButtons, PrintHeader } from '../components/domain'
 import { usePackLabel } from '../lib/packLabel'
 import { ProductForm } from '../components/ProductForm'
 import { FilterChip, FilterMenu, FilterOptions, FilterSection } from '../components/FilterMenu'
 import { Badge, Button, Card, Checkbox, Empty, ErrorBox, Loading, PageHeader, Select, useFeedback } from '../components/ui'
 import { daysBetween } from '../lib/format'
 import { isLowStock } from '../lib/stockLevel'
+import { searchProducts } from '../lib/productSearch'
 import type { ProductStock } from '../lib/types'
 import { useOrg } from '../lib/app'
 import { useCatalog } from '../lib/catalog'
@@ -48,15 +49,14 @@ export function Products() {
   // everything except the stock filter: the stock buttons show counts of this list
   const base = useMemo(() => {
     if (!cat) return []
-    const terms = q.toLowerCase().split(/\s+/).filter(Boolean)
-    return cat.products.filter((p) => {
+    const filtered = cat.products.filter((p) => {
       if (!showInactive && !p.is_active) return false
       if (category !== 'all' && p.category_id !== category) return false
       if (company !== 'all' && (p.company_id ?? 'none') !== company) return false
-      if (!terms.length) return true
-      const hay = `${p.name} ${p.name_ur ?? ''} ${p.company_name ?? ''} ${fmtPack(p.pack_size, p.pack_unit)} ${p.category_name} ${p.notes ?? ''}`.toLowerCase()
-      return terms.every((x) => hay.includes(x))
+      return true
     })
+    // best matches first while searching (unless another sort is chosen)
+    return searchProducts(filtered, q)
   }, [cat, q, category, company, showInactive])
 
   const list = useMemo(() => {
@@ -184,8 +184,8 @@ export function Products() {
                   {list.map((p) => (
                     <tr key={p.id} className="cursor-pointer" onClick={() => nav(`/products/${p.id}`)}>
                       <td>
-                        <div className="font-medium">{pick(p.name, p.name_ur)}</div>
-                        {p.company_name && <div className="text-xs text-stone-500">{p.company_name}</div>}
+                        <div className="font-medium"><Highlight text={pick(p.name, p.name_ur)} q={q} /></div>
+                        {p.company_name && <div className="text-xs text-stone-500"><Highlight text={p.company_name} q={q} /></div>}
                       </td>
                       <td className="text-stone-600">{pick(p.category_name, p.category_name_ur)}</td>
                       <td className="num font-medium text-brand-800">{label(p)}</td>

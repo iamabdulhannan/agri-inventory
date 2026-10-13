@@ -2,6 +2,7 @@ import { ArrowLeft, CheckCircle2, Download, FileSpreadsheet, Upload, X } from 'l
 import { useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { PartyPicker } from '../components/PartyPicker'
+import { AccountPicker } from '../components/AccountPicker'
 import { Badge, Button, Card, Checkbox, ErrorBox, Field, Input, Loading, PageHeader, Select, useFeedback, Segmented } from '../components/ui'
 import { useOrg } from '../lib/app'
 import { loadCatalog } from '../lib/catalog'
@@ -14,6 +15,7 @@ import { useI18n } from '../lib/i18n'
 import { fmtMoney, r2 } from '../lib/money'
 import { usePackLabel } from '../lib/packLabel'
 import { loadParties } from '../lib/parties'
+import { useAccounts } from '../lib/accounts'
 import { buildImport, EXAMPLE_ROWS, nameKey, readFileRows, TEMPLATE_HEADER, templateRows, type Cell, type ImportRow } from '../lib/stockImport'
 import { supabase } from '../lib/supabase'
 import type { BatchStock } from '../lib/types'
@@ -50,6 +52,9 @@ export function BulkStockIn() {
   const [pendingParty, setPendingParty] = useState<string | null>(null)
   const [reference, setReference] = useState('')
   const [paid, setPaid] = useState('')
+  const [account, setAccount] = useState('') // paid from: '' = cash in hand
+  const { data: accounts } = useAccounts()
+  const hasAccounts = (accounts ?? []).some((a) => a.is_active)
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
   const [saveError, setSaveError] = useState('')
@@ -171,6 +176,8 @@ export function BulkStockIn() {
         p_party_id: isPurchase && partyId ? partyId : null,
         p_paid: isPurchase ? paidNum : null,
         p_opening: !isPurchase,
+        // only sent when used, so purchases still save before migration 013
+        ...(isPurchase && paidNum > 0 && account ? { p_account: account } : {}),
       })
       if (error) throw error
       setDone({ lines: lines.length, created: created.size })
@@ -345,7 +352,12 @@ export function BulkStockIn() {
                 </div>
                 <div>
                   <Field label={t('paidNow')} hint={partyId ? t('paidHintKhata') : undefined}>
-                    <Input type="number" min="0" step="any" inputMode="decimal" placeholder={partyId ? '0' : String(total)} value={paid} onChange={(e) => setPaid(e.target.value)} />
+                    <div className="flex gap-2">
+                      <Input type="number" min="0" step="any" inputMode="decimal" placeholder={partyId ? '0' : String(total)} value={paid} onChange={(e) => setPaid(e.target.value)} className="min-w-0 flex-1" />
+                      {hasAccounts && paidNum > 0 && (
+                        <AccountPicker value={account} onChange={setAccount} className="w-32 shrink-0" aria-label={t('salePaidFrom')} />
+                      )}
+                    </div>
                   </Field>
                   {partyId && (
                 <Segmented

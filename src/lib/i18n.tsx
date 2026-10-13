@@ -1,8 +1,13 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 
+import { bankEn, bankUr } from './i18n-parts/bank'
+import { khataEn, khataUr } from './i18n-parts/khata'
+import { saleEn, saleUr } from './i18n-parts/sale'
+
 export type Lang = 'en' | 'ur'
 
 const en = {
+  ...bankEn, ...saleEn, ...khataEn,
   appName: 'Agri Inventory',
   tagline: 'Stock & expiry control for pesticides, fertilizers and seeds',
 
@@ -152,6 +157,10 @@ const en = {
   stockFilter: 'Stock', inStock: 'In stock', outOfStock: 'Out of stock', expiringSoon: 'Expiring',
   allCompanies: 'All companies', sortBy: 'Sort', sortName: 'Name (A–Z)', sortStockHigh: 'Stock: high to low',
   sortStockLow: 'Stock: low to high', sortExpiry: 'Expiry: soonest first', sortValue: 'Stock value: high to low',
+  errInvalidAccount: 'Choose an active cash or bank account.', errAdvanceTooMuch: 'That is more than is left in this crop advance.', errInvalidAdvance: 'This crop advance does not belong to this customer or is closed.', errInvalidStatus: 'This cheque cannot be changed like that.', errRepayTooMuch: 'That is more than you owe on this bank facility.',
+  cashInHandOpt: 'Cash in hand', accountLabel: 'Account', dueEndDec: 'End of December', dueEndJun: 'End of June (wheat)', due30: '30 days', due60: '60 days', due90: '90 days',
+  auditBankBalance: 'Bank & wallet balance', auditChequesInHand: 'Cheques received, not cleared', auditBankOwed: 'Owed to banks (finance)', auditCropAdvances: 'Crop advances held (owed to farmers)',
+  duesTodayCount: '{n} to pay today ({amount})', duesLateCount: '{n} late ({amount})', duesToday: 'Today', duesDaysLate: '{n} days late',
   navAudit: 'Audit', auditAdminOnly: 'Only the owner or an admin can open Audit.',
   errPeriodLocked: 'This date is in a locked year. Entries up to the lock date cannot be added, changed or deleted. The owner can unlock it in Audit.',
   auditTitle: 'Audit & year end',
@@ -328,6 +337,7 @@ const en = {
 export type TKey = keyof typeof en
 
 const ur: Record<TKey, string> = {
+  ...bankUr, ...saleUr, ...khataUr,
   appName: 'زرعی انوینٹری',
   tagline: 'زرعی ادویات، کھاد اور بیج کا اسٹاک اور ایکسپائری کنٹرول',
 
@@ -463,6 +473,10 @@ const ur: Record<TKey, string> = {
   stockFilter: 'اسٹاک', inStock: 'اسٹاک میں', outOfStock: 'اسٹاک ختم', expiringSoon: 'ایکسپائر ہونے والے',
   allCompanies: 'تمام کمپنیاں', sortBy: 'ترتیب', sortName: 'نام (ا–ی)', sortStockHigh: 'اسٹاک: زیادہ سے کم',
   sortStockLow: 'اسٹاک: کم سے زیادہ', sortExpiry: 'ایکسپائری: پہلے والی', sortValue: 'اسٹاک مالیت: زیادہ سے کم',
+  errInvalidAccount: 'کوئی فعال نقد یا بینک اکاؤنٹ چنیں۔', errAdvanceTooMuch: 'یہ رقم اس فصل ایڈوانس میں باقی رقم سے زیادہ ہے۔', errInvalidAdvance: 'یہ فصل ایڈوانس اس گاہک کا نہیں یا بند ہے۔', errInvalidStatus: 'اس چیک کو اس طرح تبدیل نہیں کیا جا سکتا۔', errRepayTooMuch: 'یہ رقم اس بینک سہولت پر واجب رقم سے زیادہ ہے۔',
+  cashInHandOpt: 'نقد (گلہ)', accountLabel: 'اکاؤنٹ', dueEndDec: 'دسمبر کے آخر تک', dueEndJun: 'جون کے آخر تک (گندم)', due30: '30 دن', due60: '60 دن', due90: '90 دن',
+  auditBankBalance: 'بینک اور والٹ بیلنس', auditChequesInHand: 'وصول شدہ چیک، ابھی کلیئر نہیں', auditBankOwed: 'بینکوں کا قرض (فنانس)', auditCropAdvances: 'فصل ایڈوانس (کسانوں کی امانت)',
+  duesTodayCount: 'آج {n} کی ادائیگی ({amount})', duesLateCount: '{n} کی تاریخ گزر گئی ({amount})', duesToday: 'آج', duesDaysLate: '{n} دن لیٹ',
   navAudit: 'آڈٹ', auditAdminOnly: 'آڈٹ صرف مالک یا ایڈمن کھول سکتا ہے۔',
   errPeriodLocked: 'یہ تاریخ بند (لاک) سال میں ہے۔ لاک کی تاریخ تک کوئی اندراج شامل، تبدیل یا حذف نہیں ہو سکتا۔ مالک آڈٹ میں جا کر اسے کھول سکتا ہے۔',
   auditTitle: 'آڈٹ اور سال کا اختتام',

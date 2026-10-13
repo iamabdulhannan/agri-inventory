@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ProductPicker } from '../components/domain'
 import { ProductForm } from '../components/ProductForm'
 import { PartyPicker } from '../components/PartyPicker'
+import { AccountPicker } from '../components/AccountPicker'
 import { InvoiceReturn } from '../components/InvoiceReturn'
 import { Button, Card, ErrorBox, Field, Input, Loading, PageHeader, Select, useFeedback, Segmented } from '../components/ui'
 import { cx } from '../lib/cx'
@@ -18,6 +19,7 @@ import type { BatchStock, MovementType } from '../lib/types'
 import { fmtTotal } from '../lib/units'
 import { fmtMoney, r2 } from '../lib/money'
 import { loadParties } from '../lib/parties'
+import { useAccounts } from '../lib/accounts'
 
 interface Line {
   key: number
@@ -54,6 +56,9 @@ export function StockIn() {
   const [party, setParty] = useState('')
   const [partyId, setPartyId] = useState('')
   const [paid, setPaid] = useState('')
+  const [account, setAccount] = useState('') // paid from: '' = cash in hand
+  const { data: accounts } = useAccounts()
+  const hasAccounts = (accounts ?? []).some((a) => a.is_active)
   const [reference, setReference] = useState('')
   const [note, setNote] = useState('')
   const [lines, setLines] = useState<Line[]>(() => [blank(params.get('product') ?? '')])
@@ -196,6 +201,8 @@ export function StockIn() {
       p_party_id: isPurchase && partyId ? partyId : null,
       p_paid: isPurchase ? paidNum : null,
       p_opening: type === 'opening',
+      // only sent when used, so purchases still save before migration 013
+      ...(isPurchase && paidNum > 0 && account ? { p_account: account } : {}),
     })
     setBusy(false)
     if (error) return setErr(errText(error, t))
@@ -209,6 +216,7 @@ export function StockIn() {
     setParty('')
     setPartyId('')
     setPaid('')
+    setAccount('')
     setReference('')
     setNote('')
     refresh()
@@ -374,7 +382,13 @@ export function StockIn() {
             </div>
             <div>
               <Field label={t('paidNow')} hint={partyId ? t('paidHintKhata') : undefined}>
-                <Input type="number" min="0" step="any" inputMode="decimal" placeholder={partyId ? '0' : String(total)} value={paid} onChange={(e) => setPaid(e.target.value)} />
+                <div className="flex gap-2">
+                  <Input type="number" min="0" step="any" inputMode="decimal" placeholder={partyId ? '0' : String(total)} value={paid} onChange={(e) => setPaid(e.target.value)} className="min-w-0 flex-1" />
+                  {/* editing keeps the account of the original payment (server side) */}
+                  {!editing && hasAccounts && paidNum > 0 && (
+                    <AccountPicker value={account} onChange={setAccount} className="w-32 shrink-0" aria-label={t('salePaidFrom')} />
+                  )}
+                </div>
               </Field>
               {partyId && (
                 <Segmented

@@ -3,7 +3,9 @@ import { useOrg } from '../lib/app'
 import { errText } from '../lib/errors'
 import { useI18n } from '../lib/i18n'
 import { supabase } from '../lib/supabase'
+import type { PartyWithRule } from '../lib/khataMoney'
 import type { Party, PartyKind } from '../lib/types'
+import { DueRuleChips } from './khata/DueRuleChips'
 import { Button, ErrorBox, Field, Input, Modal, Textarea } from './ui'
 
 /** Add or edit a customer / supplier khata account */
@@ -23,6 +25,7 @@ export function PartyForm({
   const [address, setAddress] = useState('')
   const [opening, setOpening] = useState('')
   const [notes, setNotes] = useState('')
+  const [dueRule, setDueRule] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
@@ -34,6 +37,7 @@ export function PartyForm({
     setAddress(party?.address ?? '')
     setOpening(party && Number(party.opening_balance) ? String(Number(party.opening_balance)) : '')
     setNotes(party?.notes ?? '')
+    setDueRule((party as PartyWithRule | null | undefined)?.due_rule ?? '')
   }, [open, party])
 
   const save = async () => {
@@ -46,10 +50,14 @@ export function PartyForm({
       opening_balance: Number(opening) || 0,
       notes: notes.trim() || null,
     }
+    const write = (r: typeof row & { due_rule?: string | null }) =>
+      party
+        ? supabase.from('parties').update(r).eq('id', party.id).select('id').single()
+        : supabase.from('parties').insert({ ...r, org_id: org.id, kind }).select('id').single()
     setBusy(true)
-    const res = party
-      ? await supabase.from('parties').update(row).eq('id', party.id).select('id').single()
-      : await supabase.from('parties').insert({ ...row, org_id: org.id, kind }).select('id').single()
+    let res = await write(kind === 'customer' ? { ...row, due_rule: dueRule || null } : row)
+    // before migration 013 there is no due_rule column: save the rest
+    if (res.error && kind === 'customer' && /due_rule/.test(`${res.error.message} ${res.error.details ?? ''}`)) res = await write(row)
     setBusy(false)
     if (res.error) return setError(errText(res.error, t))
     onSaved(res.data.id)
@@ -82,6 +90,13 @@ export function PartyForm({
         <Field label={t('openingBalance')} hint={kind === 'customer' ? t('openingHintCustomer') : t('openingHintSupplier')}>
           <Input type="number" step="any" inputMode="decimal" value={opening} onChange={(e) => setOpening(e.target.value)} placeholder="0" />
         </Field>
+        {kind === 'customer' && (
+          <div>
+            <div className="mb-1.5 text-sm font-medium text-stone-700">{t('khUsuallyPays')}</div>
+            <DueRuleChips value={dueRule} onChange={setDueRule} />
+            <div className="mt-1 text-xs text-stone-500">{t('khUsuallyPaysHint')}</div>
+          </div>
+        )}
         <Field label={t('note')} optional>
           <Textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
         </Field>

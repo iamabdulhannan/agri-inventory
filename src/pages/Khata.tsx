@@ -2,9 +2,15 @@ import { ArrowLeft, BookUser, HandCoins, Pencil, Plus, Search, ShoppingCart, Tra
 import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { PrintHeader, ReportButtons } from '../components/domain'
+import { AdvancesView } from '../components/khata/AdvancesView'
+import { DuesCard } from '../components/khata/DuesCard'
+import { PartyAdvances } from '../components/khata/PartyAdvances'
+import { PaymentModal } from '../components/khata/PaymentModal'
+import { PendingCheques } from '../components/khata/PendingCheques'
+import { RecoveryView } from '../components/khata/RecoveryView'
 import { PartyForm } from '../components/PartyForm'
 import { ReceiptModal } from '../components/Receipt'
-import { Badge, Button, Card, Empty, ErrorBox, Field, Input, Loading, Modal, PageHeader, Tabs, useFeedback } from '../components/ui'
+import { Badge, Button, Card, Empty, ErrorBox, Input, Loading, PageHeader, Tabs, useFeedback } from '../components/ui'
 import { useOrg } from '../lib/app'
 import { downloadCsv } from '../lib/csv'
 import { cx } from '../lib/cx'
@@ -12,10 +18,14 @@ import { useLoad } from '../lib/data'
 import { errText } from '../lib/errors'
 import { fmtDate } from '../lib/format'
 import { useI18n } from '../lib/i18n'
+import { ledgerLabel, loadAdvanceEntries, loadAdvances, loadDues, loadPendingCheques, type LedgerKind, type PartyWithRule } from '../lib/khataMoney'
 import { fmtMoney } from '../lib/money'
 import { loadParties } from '../lib/parties'
 import { supabase } from '../lib/supabase'
 import type { LedgerRow, PartyBalance, PartyKind } from '../lib/types'
+
+/** a part that needs migration 013: on error, show nothing instead of breaking the page */
+const optional = <T,>(p: Promise<T>, empty: T): Promise<T> => p.catch(() => empty)
 
 /** "Owes you Rs 1,400" / "You owe Rs 2,900" / "Settled" */
 export function BalanceBadge({ kind, balance }: { kind: PartyKind; balance: number }) {
@@ -30,12 +40,20 @@ export function KhataList() {
   const { org, version, refresh } = useOrg()
   const nav = useNavigate()
   const [params, setParams] = useSearchParams()
-  // 'advance' lists everyone with an advance balance (customers and suppliers)
-  const view: PartyKind | 'advance' = params.get('kind') === 'supplier' ? 'supplier' : params.get('kind') === 'advance' ? 'advance' : 'customer'
+  // 'advance' lists everyone with an advance balance (customers and suppliers);
+  // 'recovery' = who owes money and by when; 'advances' = crop advances
+  const VIEWS = ['customer', 'supplier', 'advance', 'recovery', 'advances'] as const
+  type View = (typeof VIEWS)[number]
+  const view: View = VIEWS.find((v) => v === params.get('kind')) ?? 'customer'
   const kind: PartyKind = view === 'supplier' ? 'supplier' : 'customer'
+  const partyView = view === 'customer' || view === 'supplier' || view === 'advance'
   const [q, setQ] = useState('')
   const [adding, setAdding] = useState(false)
   const { data, error, loading, reload } = useLoad(() => loadParties(org.id), [org.id, version])
+  // crop advances (migration 013); the list tab shows the error, the summary card just hides
+  const crop = useLoad(() => loadAdvances(org.id), [org.id, version])
+  const cropHeld = (crop.data ?? []).reduce((s, a) => s + Math.max(a.balance, 0), 0)
+  const cropOpen = (crop.data ?? []).filter((a) => !a.is_closed).length
 
   const list = useMemo(() => {
     const terms = q.toLowerCase().split(/\s+/).filter(Boolean)
@@ -60,17 +78,19 @@ export function KhataList() {
       <PageHeader
         title={<span className="flex items-center gap-2"><BookUser className="size-6 text-brand-700" /> {t('navKhata')}</span>}
         actions={
-          <>
-            <ReportButtons onExcel={exportCsv} />
-            <Button onClick={() => setAdding(true)}>
-              <Plus className="size-4" /> {kind === 'customer' ? t('addCustomer') : t('addSupplier')}
-            </Button>
-          </>
+          partyView && (
+            <>
+              <ReportButtons onExcel={exportCsv} />
+              <Button onClick={() => setAdding(true)}>
+                <Plus className="size-4" /> {kind === 'customer' ? t('addCustomer') : t('addSupplier')}
+              </Button>
+            </>
+          )
         }
       />
-      <PrintHeader title={`${t('navKhata')} · ${view === 'advance' ? t('advanceTab') : kind === 'customer' ? t('customers') : t('suppliers')}`} />
+      {partyView && <PrintHeader title={`${t('navKhata')} · ${view === 'advance' ? t('advanceTab') : kind === 'customer' ? t('customers') : t('suppliers')}`} />}
 
-      <div className="mb-4 grid gap-3 sm:grid-cols-3">
+      {partyView && <div className="mb-4 grid gap-3 sm:grid-cols-3">
         <button onClick={() => setParams({ kind: 'customer' })} className={cx('rounded-xl border p-4 text-start cursor-pointer', view === 'customer' ? 'border-amber-300 bg-amber-50' : 'border-stone-200 bg-surface')}>
           <div className="text-sm text-stone-500">{t('totalReceivable')}</div>
           <div className="num text-2xl font-bold text-amber-800">{fmtMoney(receivable, lang)}</div>
@@ -83,8 +103,9 @@ export function KhataList() {
           <div className="text-sm text-stone-500">{t('totalAdvance')}</div>
           <div className="num text-2xl font-bold text-sky-800">{fmtMoney(advanceIn, lang)}</div>
           {advanceOut > 0 && <div className="num mt-0.5 text-xs text-stone-500">{t('supplierAdvance')}: {fmtMoney(advanceOut, lang)}</div>}
+          {cropHeld > 0 && <div className="num mt-0.5 text-xs text-stone-500">{t('khCropHeld')}: {fmtMoney(cropHeld, lang)}</div>}
         </button>
-      </div>
+      </div>}
 
       <Tabs
         value={view}
@@ -93,6 +114,8 @@ export function KhataList() {
           { value: 'customer', label: `${t('customers')} (${(data ?? []).filter((p) => p.kind === 'customer').length})` },
           { value: 'supplier', label: `${t('suppliers')} (${(data ?? []).filter((p) => p.kind === 'supplier').length})` },
           { value: 'advance', label: `${t('advanceTab')} (${advances.length})` },
+          { value: 'recovery', label: t('khRecovery') },
+          { value: 'advances', label: cropOpen ? `${t('khCropAdvances')} (${cropOpen})` : t('khCropAdvances') },
         ]}
       />
       <div className="no-print relative mb-3">
@@ -100,7 +123,18 @@ export function KhataList() {
         <Input className="ps-9" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('search')} />
       </div>
 
-      {loading && !data ? <Loading /> : error ? <ErrorBox onRetry={reload}>{errText(error, t)}</ErrorBox> : (
+      {view === 'advances' ? (
+        <AdvancesView
+          advances={crop.data}
+          error={crop.error}
+          loading={crop.loading}
+          reload={crop.reload}
+          q={q}
+          customers={(data ?? []).filter((p) => p.kind === 'customer')}
+        />
+      ) : loading && !data ? <Loading /> : error ? <ErrorBox onRetry={reload}>{errText(error, t)}</ErrorBox> : view === 'recovery' ? (
+        <RecoveryView parties={data ?? []} q={q} />
+      ) : (
         <Card className="print-plain">
           {list.length === 0 ? (
             <Empty>{view === 'advance' ? t('noAdvances') : kind === 'customer' ? t('noCustomers') : t('noSuppliers')}</Empty>
@@ -162,19 +196,27 @@ export function KhataDetail() {
   const [receipt, setReceipt] = useState<string | null>(null)
 
   const { data, error, loading, reload } = useLoad(async () => {
-    const [p, ledger] = await Promise.all([
+    const [p, ledger, cheques, dues, advances] = await Promise.all([
       supabase.from('party_balances').select('*').eq('id', id).single(),
       supabase.rpc('party_ledger', { p_party: id }),
+      optional(loadPendingCheques(id), []),
+      optional(loadDues(org.id, id), null),
+      optional(loadAdvances(org.id, id), null),
     ])
     if (p.error) throw p.error
     if (ledger.error) throw ledger.error
-    return { party: { ...(p.data as PartyBalance), balance: Number(p.data.balance) }, ledger: (ledger.data ?? []) as LedgerRow[] }
+    const entries = await optional(loadAdvanceEntries((advances ?? []).map((a) => a.id)), [])
+    return {
+      party: { ...(p.data as PartyBalance & PartyWithRule), balance: Number(p.data.balance) },
+      ledger: (ledger.data ?? []) as (Omit<LedgerRow, 'kind'> & { kind: LedgerKind })[],
+      cheques, dues, advances, entries,
+    }
   }, [id, version, org.id])
 
   if (loading && !data) return <Loading />
   if (error) return <ErrorBox onRetry={reload}>{errText(error, t)}</ErrorBox>
   if (!data) return null
-  const { party, ledger } = data
+  const { party, ledger, cheques, dues, advances, entries } = data
   const isCustomer = party.kind === 'customer'
   const totals = ledger.reduce((a, r) => ({ bill: a.bill + Number(r.bill), paid: a.paid + Number(r.paid) }), { bill: 0, paid: 0 })
 
@@ -189,7 +231,7 @@ export function KhataDetail() {
 
   const exportCsv = () =>
     downloadCsv(`khata-${party.name}`, [t('date'), t('type'), t('reference'), t('note'), t('bill'), t('paidCol'), t('balance')],
-      ledger.map((r) => [r.entry_date, t(`lk_${r.kind}`), r.ref, r.note, r.bill, r.paid, r.balance]))
+      ledger.map((r) => [r.entry_date, ledgerLabel(r.kind, t), r.ref === 'CHQ' ? t('khCheque') : r.ref, r.note, r.bill, r.paid, r.balance]))
 
   return (
     <div className="space-y-5">
@@ -230,6 +272,10 @@ export function KhataDetail() {
         </div>
       </div>
 
+      <PendingCheques cheques={cheques} balance={party.balance} />
+
+      {isCustomer && dues && <DuesCard party={party} dues={dues} onOpenInvoice={setReceipt} onChanged={refresh} />}
+
       <Card title={t('ledger_')} className="print-plain">
         {ledger.length === 0 ? <Empty>{t('noEntries')}</Empty> : (
           <div className="table-wrap">
@@ -249,10 +295,10 @@ export function KhataDetail() {
                   <tr key={i} className={cx((r.kind === 'sale' || r.kind === 'return') && 'cursor-pointer')} onClick={() => (r.kind === 'sale' || r.kind === 'return') && r.doc_id && setReceipt(r.doc_id)}>
                     <td className="num whitespace-nowrap">{fmtDate(r.entry_date, lang)}</td>
                     <td>
-                      <Badge tone={r.kind === 'receipt' || r.kind === 'payment' || r.kind === 'return' ? 'green' : r.kind === 'opening' ? 'stone' : isCustomer ? 'amber' : 'red'}>{t(`lk_${r.kind}`)}</Badge>
+                      <Badge tone={r.kind === 'bank_paid' || r.kind === 'advance_moved' ? 'blue' : r.kind === 'receipt' || r.kind === 'payment' || r.kind === 'return' ? 'green' : r.kind === 'opening' ? 'stone' : isCustomer ? 'amber' : 'red'}>{ledgerLabel(r.kind, t)}</Badge>
                       {r.note && <div className="text-xs text-stone-500">{r.note}</div>}
                     </td>
-                    <td className="num">{r.ref}</td>
+                    <td className="num">{r.ref === 'CHQ' ? <Badge tone="orange">{t('khCheque')}</Badge> : r.ref}</td>
                     <td className="r num">{Number(r.bill) ? fmtMoney(r.bill, lang) : ''}</td>
                     <td className="r num text-brand-700">{Number(r.paid) ? fmtMoney(r.paid, lang) : ''}</td>
                     <td className="r num font-semibold">{fmtMoney(r.balance, lang)}</td>
@@ -272,73 +318,13 @@ export function KhataDetail() {
         )}
       </Card>
 
+      {isCustomer && advances && (
+        <PartyAdvances party={party} advances={advances} entries={entries} onOpenInvoice={setReceipt} onChanged={refresh} />
+      )}
+
       <PartyForm open={editing} onClose={() => setEditing(false)} kind={party.kind} party={party} onSaved={() => { setEditing(false); toast(t('partySaved')); refresh() }} />
-      <PaymentModal open={paying} onClose={() => setPaying(false)} party={party} onSaved={() => { setPaying(false); toast(t('paymentSaved')); refresh() }} />
+      <PaymentModal open={paying} onClose={() => setPaying(false)} party={party} onSaved={(msg) => { setPaying(false); toast(msg); refresh() }} />
       <ReceiptModal saleId={receipt} onClose={() => setReceipt(null)} />
     </div>
-  )
-}
-
-function PaymentModal({ open, onClose, party, onSaved }: { open: boolean; onClose: () => void; party: PartyBalance; onSaved: () => void }) {
-  const { t, lang } = useI18n()
-  const { org, today } = useOrg()
-  const [amount, setAmount] = useState('')
-  const [date, setDate] = useState(today)
-  const [note, setNote] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  const [last, setLast] = useState(false)
-  if (open !== last) {
-    setLast(open)
-    if (open) {
-      setAmount(party.balance > 0 ? String(party.balance) : '')
-      setDate(today)
-      setNote('')
-      setError('')
-    }
-  }
-  const isCustomer = party.kind === 'customer'
-  const save = async () => {
-    setError('')
-    if (!(Number(amount) > 0)) return setError(t('errInvalidAmount'))
-    setBusy(true)
-    const { error } = await supabase.rpc('record_party_payment', { p_org: org.id, p_party: party.id, p_date: date, p_amount: Number(amount), p_note: note || null })
-    setBusy(false)
-    if (error) return setError(errText(error, t))
-    onSaved()
-  }
-  return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      size="sm"
-      title={isCustomer ? t('receivePayment') : t('paySupplier')}
-      footer={
-        <>
-          <Button variant="secondary" onClick={onClose}>{t('cancel')}</Button>
-          <Button onClick={save} loading={busy}>{t('save')}</Button>
-        </>
-      }
-    >
-      <div className="mb-4 rounded-lg bg-stone-50 px-3 py-2 text-sm">
-        <div className="font-medium">{party.name}</div>
-        <div className="num text-stone-600">{t('balance')}: {fmtMoney(party.balance, lang)}</div>
-      </div>
-      <div className="space-y-3">
-        <Field label={t('amount')} required>
-          <Input type="number" min="0" step="any" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />
-        </Field>
-        <Field label={t('date')}>
-          <Input type="date" value={date} max={today} onChange={(e) => setDate(e.target.value)} />
-        </Field>
-        <Field label={t('note')} optional>
-          <Input value={note} onChange={(e) => setNote(e.target.value)} />
-        </Field>
-        {Number(amount) > 0 && (
-          <div className="num text-sm text-stone-600">{t('newBalance')}: <b>{fmtMoney(party.balance - Number(amount), lang)}</b></div>
-        )}
-        {error && <ErrorBox>{error}</ErrorBox>}
-      </div>
-    </Modal>
   )
 }

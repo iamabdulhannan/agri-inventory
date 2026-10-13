@@ -30,6 +30,8 @@ interface YearReport {
   gross_profit: number; expenses: number; net_profit: number
   cash_opening: number; cash_in: number; cash_out: number; cash_closing: number
   receivable: number; payable: number; customer_advances: number; supplier_advances: number
+  // from migration 013 (absent before it is run)
+  cash_in_hand?: number; bank_balance?: number; bank_owed?: number; crop_advances_held?: number; cheques_in_hand?: number
   locked_until: string | null
 }
 
@@ -173,7 +175,11 @@ function YearSummary({ from, to, period, isTaxYear }: PeriodProps & { isTaxYear:
       [t('netProfit'), r.net_profit],
       ['', ''],
       [t('positionOn', { date: fmtDate(to, 'en') }), ''],
-      [t('cashInHand'), r.cash_closing],
+      ...(r.bank_balance != null
+        ? [[t('cashInHand'), r.cash_in_hand], [t('auditBankBalance'), r.bank_balance], [t('auditChequesInHand'), r.cheques_in_hand]]
+        : [[t('cashInHand'), r.cash_closing]]),
+      ...(Number(r.bank_owed) > 0 ? [[t('auditBankOwed'), r.bank_owed]] : []),
+      ...(Number(r.crop_advances_held) > 0 ? [[t('auditCropAdvances'), r.crop_advances_held]] : []),
       [t('totalReceivable'), r.receivable],
       [t('totalPayable'), r.payable],
       [t('customerAdvances'), r.customer_advances],
@@ -242,9 +248,19 @@ function YearSummary({ from, to, period, isTaxYear }: PeriodProps & { isTaxYear:
             <table className="tbl">
               <tbody>
                 <Line label={t('stockAtCost')} value={r.closing_stock} />
-                <Line label={t('cashInHand')} value={r.cash_closing} tone={r.cash_closing < 0 ? 'red' : undefined} />
+                {r.bank_balance != null ? (
+                  <>
+                    <Line label={t('cashInHand')} value={r.cash_in_hand ?? 0} tone={Number(r.cash_in_hand) < 0 ? 'red' : undefined} />
+                    {Number(r.bank_balance) !== 0 && <Line label={t('auditBankBalance')} value={r.bank_balance} />}
+                    {Number(r.cheques_in_hand) > 0 && <Line label={t('auditChequesInHand')} value={r.cheques_in_hand ?? 0} />}
+                  </>
+                ) : (
+                  <Line label={t('cashInHand')} value={r.cash_closing} tone={r.cash_closing < 0 ? 'red' : undefined} />
+                )}
                 <Line label={t('totalReceivable')} value={r.receivable} />
                 <Line label={t('totalPayable')} value={r.payable} />
+                {Number(r.bank_owed) > 0 && <Line label={t('auditBankOwed')} value={r.bank_owed ?? 0} />}
+                {Number(r.crop_advances_held) > 0 && <Line label={t('auditCropAdvances')} value={r.crop_advances_held ?? 0} />}
                 {Number(r.customer_advances) > 0 && <Line label={t('customerAdvances')} value={r.customer_advances} />}
                 {Number(r.supplier_advances) > 0 && <Line label={t('supplierAdvance')} value={r.supplier_advances} />}
               </tbody>

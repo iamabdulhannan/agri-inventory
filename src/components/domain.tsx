@@ -4,7 +4,8 @@ import { useApp } from '../lib/app'
 import { daysBetween, fmtDate, fmtDateTime } from '../lib/format'
 import { useI18n } from '../lib/i18n'
 import type { PackType, PackUnit, ProductStock } from '../lib/types'
-import { fmtNum, fmtPack, fmtTotal } from '../lib/units'
+import { fmtNum, fmtTotal } from '../lib/units'
+import { matchRange, searchProducts } from '../lib/productSearch'
 import { Badge, Button } from './ui'
 import { cx } from '../lib/cx'
 import { usePackLabel } from '../lib/packLabel'
@@ -111,15 +112,8 @@ export function ProductPicker({
   const selected = products.find((p) => p.id === value)
 
   const list = useMemo(() => {
-    const terms = q.toLowerCase().split(/\s+/).filter(Boolean)
     const active = products.filter((p) => p.is_active || p.id === value)
-    if (!terms.length) return active.slice(0, 200)
-    return active
-      .filter((p) => {
-        const hay = `${p.name} ${p.name_ur ?? ''} ${p.company_name ?? ''} ${fmtPack(p.pack_size, p.pack_unit)} ${p.pack_size}${p.pack_unit} ${p.category_name} ${p.notes ?? ''}`.toLowerCase()
-        return terms.every((x) => hay.includes(x))
-      })
-      .slice(0, 200)
+    return searchProducts(active, q).slice(0, 200)
   }, [products, q, value])
 
   useEffect(() => {
@@ -184,10 +178,10 @@ export function ProductPicker({
                   className={cx('flex w-full items-center justify-between gap-3 px-3 py-2 text-start text-sm cursor-pointer', i === hi && 'bg-brand-50')}
                 >
                   <div className="min-w-0">
-                    <div className="truncate font-medium">{pick(p.name, p.name_ur)}</div>
+                    <div className="truncate font-medium"><Highlight text={pick(p.name, p.name_ur)} q={q} /></div>
                     <div className="truncate text-xs text-stone-500">
                       <span className="num">{label(p)}</span>
-                      {p.company_name ? ` · ${p.company_name}` : ''}
+                      {p.company_name && <> · <Highlight text={p.company_name} q={q} /></>}
                     </div>
                   </div>
                   {showStock && (
@@ -215,5 +209,18 @@ export function ProductPicker({
         </div>
       )}
     </div>
+  )
+}
+
+/** The text with the part matching the search shown in bold */
+export function Highlight({ text, q }: { text: string; q: string }) {
+  const r = q.trim() ? matchRange(text, q) : null
+  if (!r) return <>{text}</>
+  return (
+    <>
+      {text.slice(0, r[0])}
+      <mark className="rounded-sm bg-brand-100 px-px font-semibold text-inherit">{text.slice(r[0], r[1])}</mark>
+      {text.slice(r[1])}
+    </>
   )
 }

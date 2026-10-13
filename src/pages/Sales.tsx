@@ -10,11 +10,20 @@ import { fetchAll, useLoad } from '../lib/data'
 import { errText } from '../lib/errors'
 import { fmtDate, monthOf, monthRange } from '../lib/format'
 import { useI18n } from '../lib/i18n'
-import { fmtMoney } from '../lib/money'
+import { daysLeft } from '../lib/due'
+import { fmtMoney, r2 } from '../lib/money'
 import { supabase } from '../lib/supabase'
 import type { Purchase, Sale } from '../lib/types'
 
-type SaleRow = Sale & { parties: { name: string } | null }
+type SaleRow = Sale & {
+  parties: { name: string } | null
+  // money columns of migration 013 (absent before it runs)
+  markup?: number | null
+  advance_used?: number | null
+  due_date?: string | null
+}
+/** what is still on khata for this invoice */
+const saleDue = (s: SaleRow) => r2(Number(s.total) - Number(s.paid) - (Number(s.advance_used) || 0))
 type PurchaseRow = Purchase & { parties: { name: string } | null }
 
 export function Sales() {
@@ -54,7 +63,16 @@ export function Sales() {
     [data, q],
   )
   const rows = tab === 'sales' ? sales : purchases
-  const sum = rows.reduce((a, r) => ({ total: a.total + Number(r.total), paid: a.paid + Number(r.paid) }), { total: 0, paid: 0 })
+  const sum = rows.reduce(
+    (a, r) => ({ total: a.total + Number(r.total), paid: a.paid + Number(r.paid), adv: a.adv + (Number((r as SaleRow).advance_used) || 0) }),
+    { total: 0, paid: 0, adv: 0 },
+  )
+  /** "Due 31 Dec" badge: red when late, amber within 7 days */
+  const dueBadge = (s: SaleRow) => {
+    if (!s.due_date || saleDue(s) <= 0) return null
+    const n = daysLeft(s.due_date, today)
+    return <Badge tone={n < 0 ? 'red' : n <= 7 ? 'amber' : 'stone'}>{t('saleDueOn', { date: fmtDate(s.due_date, lang) })}</Badge>
+  }
 
   const voidSale = async (s: SaleRow) => {
     if (!(await confirm(t('voidInvoiceConfirm', { n: s.invoice_no })))) return
@@ -73,8 +91,8 @@ export function Sales() {
 
   const exportCsv = () =>
     tab === 'sales'
-      ? downloadCsv(`invoices-${from}-${to}`, [t('invoiceNum'), t('date'), t('customer'), t('subtotal'), t('discount'), t('grandTotal'), t('received'), t('balanceDue'), t('by')],
-          sales.map((s) => [s.invoice_no, s.sale_date, s.parties?.name ?? s.customer_name ?? t('walkIn'), s.subtotal, s.discount, s.total, s.paid, Number(s.total) - Number(s.paid), s.created_by_name]))
+      ? downloadCsv(`invoices-${from}-${to}`, [t('invoiceNum'), t('date'), t('customer'), t('subtotal'), t('discount'), t('grandTotal'), t('received'), t('balanceDue'), t('by'), t('saleMarkup'), t('salePaidFromAdvance'), t('salePayBy')],
+          sales.map((s) => [s.invoice_no, s.sale_date, s.parties?.name ?? s.customer_name ?? t('walkIn'), s.subtotal, s.discount, s.total, s.paid, saleDue(s), s.created_by_name, Number(s.markup) || 0, Number(s.advance_used) || 0, saleDue(s) > 0 ? s.due_date ?? '' : '']))
       : downloadCsv(`purchases-${from}-${to}`, ['#', t('date'), t('supplier'), t('reference'), t('grandTotal'), t('paidCol'), t('balanceDue'), t('by')],
           purchases.map((p) => [p.purchase_no, p.purchase_date, p.parties?.name ?? p.supplier_name, p.reference, p.total, p.paid, Number(p.total) - Number(p.paid), p.created_by_name]))
 
@@ -117,7 +135,8 @@ export function Sales() {
                 <tbody>
                   {tab === 'sales'
                     ? sales.map((s) => {
-                        const due = Number(s.total) - Number(s.paid)
+                        const due = saleDue(s)
+                        const adv = Number(s.advance_used) || 0
                         return (
                           <tr key={s.id} className="cursor-pointer" onClick={() => setReceipt(s.id)}>
                             <td className="num font-semibold">{s.invoice_no}</td>
@@ -129,10 +148,17 @@ export function Sales() {
                                 <span className="text-stone-600">{s.customer_name || t('walkIn')}</span>
                               )}
                               {Number(s.discount) > 0 && <div className="num text-xs text-stone-500">{t('discount')}: {fmtMoney(s.discount, lang)}</div>}
+                              {Number(s.markup) > 0 && <div className="num text-xs text-stone-500">{t('saleMarkup')}: + {fmtMoney(s.markup, lang)}</div>}
                             </td>
                             <td className="r num font-semibold">{fmtMoney(s.total, lang)}</td>
-                            <td className="r num text-brand-700">{fmtMoney(s.paid, lang)}</td>
-                            <td className="r">{due > 0 ? <Badge tone="amber">{fmtMoney(due, lang)}</Badge> : <span className="text-stone-300">—</span>}</td>
+                            <td className="r num text-brand-700">
+                              {fmtMoney(s.paid, lang)}
+                              {adv > 0 && <div className="text-xs font-normal text-stone-500" title={t('salePaidFromAdvance')}>+ {fmtMoney(adv, lang)} {t('advance')}</div>}
+                            </td>
+                            <td className="r">
+                              {due > 0 ? <Badge tone="amber">{fmtMoney(due, lang)}</Badge> : <span className="text-stone-300">—</span>}
+                              {dueBadge(s) && <div className="mt-1">{dueBadge(s)}</div>}
+                            </td>
                             <td className="text-stone-500">{s.created_by_name}</td>
                             <td className="no-print r whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                               <Button size="sm" variant="ghost" onClick={() => setReceipt(s.id)} aria-label={t('printReceipt')} title={t('printReceipt')}><Printer className="size-4" /></Button>
@@ -172,8 +198,11 @@ export function Sales() {
                   <tr>
                     <td colSpan={3}>{t('total')} ({rows.length})</td>
                     <td className="r num">{fmtMoney(sum.total, lang)}</td>
-                    <td className="r num">{fmtMoney(sum.paid, lang)}</td>
-                    <td className="r num">{fmtMoney(sum.total - sum.paid, lang)}</td>
+                    <td className="r num">
+                      {fmtMoney(sum.paid, lang)}
+                      {sum.adv > 0 && <div className="text-xs font-normal text-stone-500">+ {fmtMoney(sum.adv, lang)} {t('advance')}</div>}
+                    </td>
+                    <td className="r num">{fmtMoney(r2(sum.total - sum.paid - sum.adv), lang)}</td>
                     <td colSpan={2} />
                   </tr>
                 </tfoot>

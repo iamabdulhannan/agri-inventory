@@ -1,19 +1,77 @@
 import type { Lang, TFn } from './i18n'
 import { fmtMoney } from './money'
 import { supabase } from './supabase'
-import type { CashEntry, PackUnit } from './types'
+import type { CashEntry, CashKind, PackUnit } from './types'
 import { fmtNum, fmtPack } from './units'
+
+export type PayMethod = 'cash' | 'bank' | 'cheque' | 'wallet'
 
 /** cash_entries row with the documents it belongs to */
 export type CashEntryFull = CashEntry & {
   return_id?: string | null
+  /** null = cash in hand */
+  account_id?: string | null
+  method?: PayMethod | null
+  transfer_id?: string | null
+  facility_id?: string | null
+  advance_id?: string | null
+  cheque_id?: string | null
+  cheques?: { cheque_no: string | null; bank_name: string | null } | null
   purchases?: { purchase_no: number; supplier_name: string | null; reference: string | null; total: number; paid: number } | null
   sales?: { invoice_no: number; customer_name: string | null; total: number; paid: number } | null
   sale_returns?: { total: number; refund: number; sales: { invoice_no: number; customer_name: string | null } | null } | null
 }
 
 export const CASH_SELECT =
-  '*, parties(name), purchases(purchase_no, supplier_name, reference, total, paid), sales(invoice_no, customer_name, total, paid), sale_returns(total, refund, sales(invoice_no, customer_name))'
+  '*, parties(name), purchases(purchase_no, supplier_name, reference, total, paid), sales(invoice_no, customer_name, total, paid), sale_returns(total, refund, sales(invoice_no, customer_name)), cheques(cheque_no, bank_name)'
+
+type Tone = 'green' | 'red' | 'amber' | 'blue' | 'stone' | 'orange'
+const TONE: Record<CashKind, Tone> = {
+  sale: 'green', receipt: 'green', cash_in: 'blue', purchase: 'orange', payment: 'orange', expense: 'red', cash_out: 'stone',
+}
+const MANUAL: CashKind[] = ['expense', 'cash_in', 'cash_out']
+
+/** Type label + badge colour of a roznamcha line (transfers, crop advances and bank repayments get their own) */
+export function cashType(e: CashEntryFull, t: TFn): { label: string; tone: Tone } {
+  if (e.transfer_id) return { label: t('bankRzTransfer'), tone: 'blue' }
+  if (e.advance_id) return e.amount >= 0 ? { label: t('bankRzAdvance'), tone: 'blue' } : { label: t('bankRzAdvanceRefund'), tone: 'stone' }
+  if (e.facility_id) return e.kind === 'expense' ? { label: t('bankRzMarkup'), tone: 'red' } : { label: t('bankRzRepayment'), tone: 'orange' }
+  return { label: t(`ck_${e.kind}`), tone: TONE[e.kind] }
+}
+
+/** Made by another screen (sale, purchase, return, cheque, crop advance, bank): changed there, not in the roznamcha */
+export const isLinkedCash = (e: CashEntryFull) =>
+  !!(e.sale_id || e.purchase_id || e.return_id || e.advance_id || e.facility_id || e.cheque_id)
+
+/** Lines the roznamcha may delete: own manual lines and transfers (both sides go together) */
+export const canDeleteCash = (e: CashEntryFull) => !isLinkedCash(e) && (!!e.transfer_id || MANUAL.includes(e.kind))
+
+/** The other side of each transfer: entry id -> account id of the other side (null = cash in hand) */
+export async function loadTransferPeers(entries: CashEntryFull[]): Promise<Map<string, string | null>> {
+  const ids = [...new Set(entries.map((e) => e.transfer_id).filter(Boolean) as string[])]
+  const map = new Map<string, string | null>()
+  if (!ids.length) return map
+  const { data, error } = await supabase.from('cash_entries').select('id, transfer_id, account_id').in('transfer_id', ids).limit(5000)
+  if (error) throw error
+  const rows = (data ?? []) as { id: string; transfer_id: string; account_id: string | null }[]
+  for (const e of entries) {
+    if (!e.transfer_id) continue
+    const other = rows.find((r) => r.transfer_id === e.transfer_id && r.id !== e.id)
+    if (other) map.set(e.id, other.account_id)
+  }
+  return map
+}
+
+/** System notes are saved in English ("Bank repayment · HBL · ..."): drop the English label, the type badge says it */
+const SYSTEM_NOTE = /^(Crop advance|Advance refund|Bank repayment|Bank markup)( · |$)/
+const cleanNote = (note: string | null) => (note ?? '').replace(SYSTEM_NOTE, '')
+
+export interface CashCtx {
+  /** entry id -> account of the other side of its transfer */
+  peers: Map<string, string | null>
+  /** account name; null = cash in hand */
+  accountName: (id: string | null) => string
+}
 
 interface Item { name: string; name_ur: string | null; size: number; unit: PackUnit; qty: number; company: string | null }
 type MoveRow = {
@@ -51,7 +109,7 @@ export async function loadCashItems(entries: CashEntryFull[]): Promise<Map<strin
 }
 
 /** Party and detail text for one roznamcha line */
-export function describeCash(e: CashEntryFull, items: Map<string, Item[]>, t: TFn, lang: Lang, pick: (en: string, ur?: string | null) => string) {
+export function describeCash(e: CashEntryFull, items: Map<string, Item[]>, t: TFn, lang: Lang, pick: (en: string, ur?: string | null) => string, ctx?: CashCtx) {
   const list = items.get(e.purchase_id ?? e.sale_id ?? e.return_id ?? '') ?? []
   const itemsText = list.length
     ? list.slice(0, 2).map((i) => `${pick(i.name, i.name_ur)} ${fmtPack(i.size, i.unit, lang)} × ${fmtNum(i.qty, 3)}`).join(', ') +
@@ -84,5 +142,22 @@ export function describeCash(e: CashEntryFull, items: Map<string, Item[]>, t: TF
       detail: join(r.sales ? t('returnFromInvoice', { n: r.sales.invoice_no }) : '', itemsText),
     }
   }
-  return { party: e.parties?.name ?? '', detail: e.note ?? '' }
+  if (e.transfer_id) {
+    const peer = ctx?.peers.get(e.id)
+    const name = peer === undefined ? '' : ctx?.accountName(peer) ?? ''
+    const out = e.amount < 0
+    const here = !e.account_id
+    const text = !name ? ''
+      : out ? (here && peer ? t('bankRzDepositTo', { name }) : t('bankRzTo', { name }))
+        : (here && peer ? t('bankRzWithdrawFrom', { name }) : t('bankRzFrom', { name }))
+    return { party: '', detail: join(text, e.note ?? '') }
+  }
+  if (e.cheque_id || e.method === 'cheque') {
+    const c = e.cheques
+    return {
+      party: e.parties?.name ?? '',
+      detail: c ? join(c.cheque_no ? t('bankRzChequeNo', { no: c.cheque_no }) : t('bankRzCheque'), c.bank_name ?? '') : e.note ?? '',
+    }
+  }
+  return { party: e.parties?.name ?? '', detail: cleanNote(e.note) }
 }
