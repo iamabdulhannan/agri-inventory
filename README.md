@@ -44,6 +44,8 @@ React + Vite + Tailwind on the front end, Supabase (Postgres + Auth) on the back
    12. `supabase/migrations/012_audit.sql`: year-end audit (tax year report, registers, audit trail, year lock, NTN/STRN)
    13. `supabase/migrations/013_money.sql`: bank accounts, cheques, bank finance/guarantees, credit sales (due dates, credit price, markup) and crop advances
    14. `supabase/migrations/014_sale_due_date.sql`: change the due date of a credit invoice
+   15. `supabase/migrations/015_investments.sql`: investors (capital, their stock, profit share, withdraw / settle)
+   16. `supabase/migrations/016_receipt_note.sql`: shop's own Urdu note on receipts (optional)
 3. Under **Authentication → URL Configuration**:
    - Set **Site URL** to your app URL (`http://localhost:5173` while developing).
    - Add `http://localhost:5173/**` and your production URL `/**` to **Redirect URLs**.

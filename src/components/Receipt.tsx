@@ -9,6 +9,7 @@ import { fmtDate } from '../lib/format'
 import { useI18n } from '../lib/i18n'
 import { fmtMoney } from '../lib/money'
 import { usePackLabel } from '../lib/packLabel'
+import { receiptNoteOf } from '../lib/receiptNote'
 import { supabase } from '../lib/supabase'
 import type { PackType, PackUnit, Sale } from '../lib/types'
 import { fmtNum, unitLabel } from '../lib/units'
@@ -170,6 +171,15 @@ function ReceiptView({ data, paper }: { data: ReceiptData; paper: Paper }) {
       <div className="my-2 border-t border-dashed border-black" />
       {sale.created_by_name && <div className="text-center">{t('servedBy')}: {sale.created_by_name}</div>}
       <div className="mt-1 text-center font-semibold">{t('thankYou')}</div>
+      {/* shop's note, always in Urdu */}
+      <div
+        dir="rtl"
+        lang="ur"
+        className={cx('mt-2 border-t border-dashed border-black pt-1.5 text-justify', paper === '80mm' ? 'text-[10px] leading-[1.9]' : 'text-[12px] leading-[2]')}
+        style={{ fontFamily: '"Noto Nastaliq Urdu", serif' }}
+      >
+        <b>نوٹ: </b>{receiptNoteOf(org)}
+      </div>
     </div>
   )
 }

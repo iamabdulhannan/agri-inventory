@@ -8,6 +8,7 @@ import { ThemeProvider } from './lib/theme'
 import { supabase } from './lib/supabase'
 import { AuthPage, ResetPassword } from './pages/AuthPage'
 import { Bank } from './pages/Bank'
+import { InvestorDetail, InvestorsList } from './pages/Investors'
 import { Dashboard } from './pages/Dashboard'
 import { ExpiryPage } from './pages/Expiry'
 import { History } from './pages/History'
@@ -60,6 +61,8 @@ function Root() {
         <Route path="khata/:id" element={<KhataDetail />} />
         <Route path="roznamcha" element={<Roznamcha />} />
         <Route path="bank" element={<Bank />} />
+        <Route path="investors" element={<InvestorsList />} />
+        <Route path="investors/:id" element={<InvestorDetail />} />
         <Route path="expiry" element={<ExpiryPage />} />
         <Route path="history" element={<History />} />
         <Route path="reports" element={<Reports />} />

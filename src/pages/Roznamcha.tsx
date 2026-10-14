@@ -169,6 +169,7 @@ function DayView({ book }: { book: Book }) {
                       const open = e.sale_id ? () => setReceipt(e.sale_id!)
                         : e.cheque_id ? () => nav('/bank?tab=cheques')
                           : e.facility_id ? () => nav('/bank?tab=finance')
+                            : (e as { investor_id?: string | null }).investor_id && isAdmin ? () => nav(`/investors/${(e as { investor_id?: string | null }).investor_id}`)
                             : e.party_id ? () => nav(`/khata/${e.party_id}`)
                               : undefined
                       // method badge only when it differs from the book (e.g. a cheque in a bank account)

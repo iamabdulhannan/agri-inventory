@@ -19,6 +19,8 @@ export interface Organization {
   strn?: string | null
   /** entries dated on or before this day are locked (year closed) */
   locked_until?: string | null
+  /** Urdu note at the bottom of receipts (empty = standard note) */
+  receipt_note?: string | null
   created_at: string
 }
 

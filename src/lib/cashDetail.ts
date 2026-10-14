@@ -16,6 +16,8 @@ export type CashEntryFull = CashEntry & {
   facility_id?: string | null
   advance_id?: string | null
   cheque_id?: string | null
+  /** investor capital in / profit or capital paid out */
+  investor_id?: string | null
   cheques?: { cheque_no: string | null; bank_name: string | null } | null
   purchases?: { purchase_no: number; supplier_name: string | null; reference: string | null; total: number; paid: number } | null
   sales?: { invoice_no: number; customer_name: string | null; total: number; paid: number } | null
@@ -36,12 +38,13 @@ export function cashType(e: CashEntryFull, t: TFn): { label: string; tone: Tone 
   if (e.transfer_id) return { label: t('bankRzTransfer'), tone: 'blue' }
   if (e.advance_id) return e.amount >= 0 ? { label: t('bankRzAdvance'), tone: 'blue' } : { label: t('bankRzAdvanceRefund'), tone: 'stone' }
   if (e.facility_id) return e.kind === 'expense' ? { label: t('bankRzMarkup'), tone: 'red' } : { label: t('bankRzRepayment'), tone: 'orange' }
+  if (e.investor_id) return e.amount >= 0 ? { label: t('invRzIn'), tone: 'blue' } : { label: t('invRzOut'), tone: 'stone' }
   return { label: t(`ck_${e.kind}`), tone: TONE[e.kind] }
 }
 
 /** Made by another screen (sale, purchase, return, cheque, crop advance, bank): changed there, not in the roznamcha */
 export const isLinkedCash = (e: CashEntryFull) =>
-  !!(e.sale_id || e.purchase_id || e.return_id || e.advance_id || e.facility_id || e.cheque_id)
+  !!(e.sale_id || e.purchase_id || e.return_id || e.advance_id || e.facility_id || e.cheque_id || e.investor_id)
 
 /** Lines the roznamcha may delete: own manual lines and transfers (both sides go together) */
 export const canDeleteCash = (e: CashEntryFull) => !isLinkedCash(e) && (!!e.transfer_id || MANUAL.includes(e.kind))
@@ -63,7 +66,7 @@ export async function loadTransferPeers(entries: CashEntryFull[]): Promise<Map<s
 }
 
 /** System notes are saved in English ("Bank repayment · HBL · ..."): drop the English label, the type badge says it */
-const SYSTEM_NOTE = /^(Crop advance|Advance refund|Bank repayment|Bank markup)( · |$)/
+const SYSTEM_NOTE = /^(Crop advance|Advance refund|Bank repayment|Bank markup|Investment|Investor profit paid|Investor capital returned)( · |$)/
 const cleanNote = (note: string | null) => (note ?? '').replace(SYSTEM_NOTE, '')
 
 export interface CashCtx {
@@ -158,6 +161,12 @@ export function describeCash(e: CashEntryFull, items: Map<string, Item[]>, t: TF
       party: e.parties?.name ?? '',
       detail: c ? join(c.cheque_no ? t('bankRzChequeNo', { no: c.cheque_no }) : t('bankRzCheque'), c.bank_name ?? '') : e.note ?? '',
     }
+  }
+  if (e.investor_id) {
+    // note: "Investment · <investor> · <note>" / "Investor profit paid · ..." / "Investor capital returned · ..."
+    const [label, name, ...rest] = (e.note ?? '').split(' · ')
+    const what = label === 'Investor profit paid' ? t('invRzProfit') : label === 'Investor capital returned' ? t('invRzCapital') : ''
+    return { party: name ?? '', detail: join(what, rest.join(' · ')) }
   }
   return { party: e.parties?.name ?? '', detail: cleanNote(e.note) }
 }

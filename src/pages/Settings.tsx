@@ -1,7 +1,8 @@
 import { Copy, Info, KeyRound, LockKeyhole, MessageCircle, Plus, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { Badge, Button, Card, ErrorBox, Field, Input, Loading, PageHeader, Select, useFeedback, Modal, PasswordInput } from '../components/ui'
+import { Badge, Button, Card, ErrorBox, Field, Input, Loading, PageHeader, Select, useFeedback, Modal, PasswordInput, Textarea } from '../components/ui'
 import { useOrg } from '../lib/app'
+import { DEFAULT_RECEIPT_NOTE } from '../lib/receiptNote'
 import { fetchAll, useLoad } from '../lib/data'
 import { errText } from '../lib/errors'
 import { fmtDate } from '../lib/format'
@@ -35,12 +36,14 @@ function OrgCard() {
   useEffect(() => setF(org), [org])
   // NTN / STRN columns exist once migration 012 has been run
   const hasTax = 'ntn' in org
+  // receipt note column exists once migration 016 has been run
+  const hasNote = 'receipt_note' in org
 
   const save = async () => {
     setBusy(true)
     const { error } = await supabase
       .from('organizations')
-      .update({ name: f.name.trim(), address: f.address?.trim() || null, phone: f.phone?.trim() || null, ...(hasTax ? { ntn: f.ntn?.trim() || null, strn: f.strn?.trim() || null } : {}), expiry_alert_days: Math.min(365, Math.max(1, Number(f.expiry_alert_days) || 60)) })
+      .update({ name: f.name.trim(), address: f.address?.trim() || null, phone: f.phone?.trim() || null, ...(hasTax ? { ntn: f.ntn?.trim() || null, strn: f.strn?.trim() || null } : {}), ...(hasNote ? { receipt_note: f.receipt_note?.trim() || null } : {}), expiry_alert_days: Math.min(365, Math.max(1, Number(f.expiry_alert_days) || 60)) })
       .eq('id', org.id)
     setBusy(false)
     if (error) return toast(errText(error, t), 'err')
@@ -57,6 +60,12 @@ function OrgCard() {
         <Field label={t('address')} className="sm:col-span-2"><Input value={f.address ?? ''} disabled={!isAdmin} onChange={(e) => setF({ ...f, address: e.target.value })} /></Field>
         {hasTax && <Field label={t('ntn')} optional hint={t('ntnHint')}><Input value={f.ntn ?? ''} disabled={!isAdmin} onChange={(e) => setF({ ...f, ntn: e.target.value })} dir="ltr" /></Field>}
         {hasTax && <Field label={t('strn')} optional><Input value={f.strn ?? ''} disabled={!isAdmin} onChange={(e) => setF({ ...f, strn: e.target.value })} dir="ltr" /></Field>}
+        {hasNote && (
+          <Field label={t('receiptNote')} optional hint={t('receiptNoteHint')} className="sm:col-span-2">
+            <Textarea dir="rtl" lang="ur" rows={3} value={f.receipt_note ?? ''} placeholder={DEFAULT_RECEIPT_NOTE} disabled={!isAdmin}
+              onChange={(e) => setF({ ...f, receipt_note: e.target.value })} style={{ fontFamily: '"Noto Nastaliq Urdu", serif', lineHeight: 2 }} />
+          </Field>
+        )}
         <Field label={t('alertDays')} hint={t('alertDaysHint')}>
           <Input type="number" min={1} max={365} value={f.expiry_alert_days} disabled={!isAdmin} onChange={(e) => setF({ ...f, expiry_alert_days: Number(e.target.value) })} />
         </Field>

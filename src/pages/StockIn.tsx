@@ -16,10 +16,11 @@ import { daysBetween, fmtDate } from '../lib/format'
 import { useI18n } from '../lib/i18n'
 import { supabase } from '../lib/supabase'
 import type { BatchStock, MovementType } from '../lib/types'
-import { fmtTotal } from '../lib/units'
+import { fmtNum, fmtTotal } from '../lib/units'
 import { fmtMoney, r2 } from '../lib/money'
 import { loadParties } from '../lib/parties'
 import { useAccounts } from '../lib/accounts'
+import { loadInvestors, type InvestorRow } from '../lib/investors'
 
 interface Line {
   key: number
@@ -29,14 +30,16 @@ interface Line {
   expiry_date: string
   qty: string
   rate: string // purchase rate per pack
+  inv_id: string // investor who owns part of this line ('' = shop only)
+  inv_qty: string // how many packs of the line are his
 }
 const rateOf = (n?: number | null) => (Number(n) > 0 ? String(Number(n)) : '')
 let seq = 1
-const blank = (product_id = '', rate = ''): Line => ({ key: seq++, product_id, batch_no: '', mfg_date: '', expiry_date: '', qty: '', rate })
+const blank = (product_id = '', rate = ''): Line => ({ key: seq++, product_id, batch_no: '', mfg_date: '', expiry_date: '', qty: '', rate, inv_id: '', inv_qty: '' })
 
 export function StockIn() {
   const { t, lang } = useI18n()
-  const { org, today, refresh, version } = useOrg()
+  const { org, today, refresh, version, isAdmin } = useOrg()
   const { toast } = useFeedback()
   const [params] = useSearchParams()
   const nav = useNavigate()
@@ -58,6 +61,9 @@ export function StockIn() {
   const [paid, setPaid] = useState('')
   const [account, setAccount] = useState('') // paid from: '' = cash in hand
   const { data: accounts } = useAccounts()
+  // investors (owner/admin): a purchase line can be partly / fully his
+  const { data: investors } = useLoad(async () => (isAdmin ? loadInvestors(org.id).catch(() => [] as InvestorRow[]) : []), [org.id, version, isAdmin])
+  const activeInvestors = (investors ?? []).filter((x) => x.is_active)
   const hasAccounts = (accounts ?? []).some((a) => a.is_active)
   const [reference, setReference] = useState('')
   const [note, setNote] = useState('')
@@ -99,6 +105,8 @@ export function StockIn() {
         expiry_date: m.batches.expiry_date,
         qty: String(Number(m.qty)),
         rate: m.unit_price == null ? '' : String(Number(m.unit_price)),
+        inv_id: '',
+        inv_qty: '',
       })))
       setEditing({ id: pur.id, no: pur.purchase_no })
     })()
@@ -137,6 +145,8 @@ export function StockIn() {
   const due = r2(total - paidNum)
 
   const set = (key: number, patch: Partial<Line>) => setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)))
+  /** cost of one pack for the investor: the line's rate, else the product's purchase rate */
+  const lineRate = (l: Line) => (l.rate !== '' ? Number(l.rate) || 0 : Number(catalog.byId.get(l.product_id)?.purchase_price) || 0)
   // no supplier chosen or typed: use the company of the items as the supplier name
   const supplierName = () => {
     if (party.trim()) return party.trim()
@@ -153,6 +163,17 @@ export function StockIn() {
       if (!(Number(l.qty) > 0)) return setErr(t('errQty'))
       if (l.mfg_date && l.mfg_date > l.expiry_date) return setErr(`${t('mfgDate')} > ${t('expiryDate')}`)
       if (l.rate !== '' && !(Number(l.rate) >= 0)) return setErr(t('errInvalidPrice'))
+    }
+    // investor shares: not more than the line, not more than his money
+    const splits = editing || !(isPurchase || type === 'opening') ? [] : lines.filter((l) => l.inv_id && Number(l.inv_qty) > 0)
+    const need = new Map<string, number>()
+    for (const l of splits) {
+      if (Number(l.inv_qty) > Number(l.qty) + 0.000001) return setErr(`${t('invShareLine')}: ${t('invShareTooMuch')}`)
+      need.set(l.inv_id, (need.get(l.inv_id) ?? 0) + Number(l.inv_qty) * lineRate(l))
+    }
+    for (const [id, amt] of need) {
+      const inv = activeInvestors.find((x) => x.id === id)
+      if (inv && amt > inv.available + 0.005) return setErr(t('invShareNoFunds', { name: inv.name, avail: fmtMoney(inv.available, lang) }))
     }
     if (isPurchase && (paidNum < 0 || paidNum > total)) return setErr(t('errInvalidPaid'))
     if (isPurchase && due > 0 && !partyId) return setErr(t('errCreditNeedsParty'))
@@ -212,6 +233,17 @@ export function StockIn() {
       if (pur) msg = t('purchaseSaved', { n: pur.purchase_no })
     }
     toast(msg)
+    // put the investors' part of the lines in their names
+    let done = 0
+    for (const l of splits) {
+      const { error: e2 } = await supabase.rpc('assign_investor_stock', {
+        p_org: org.id, p_investor: l.inv_id, p_product: l.product_id, p_qty: Number(l.inv_qty), p_unit_cost: lineRate(l),
+        p_date: date, p_purchase: (n as string | null) ?? null, p_note: reference || null,
+      })
+      if (e2) { toast(t('invShareFailed', { msg: errText(e2, t) }), 'err'); break }
+      done++
+    }
+    if (done) toast(t('invShareSaved', { n: done }))
     setLines([blank()])
     setParty('')
     setPartyId('')
@@ -362,6 +394,32 @@ export function StockIn() {
                   <Input type="number" min="0" step="any" inputMode="decimal" placeholder="0" value={l.rate} onChange={(e) => set(l.key, { rate: e.target.value })} />
                 </Field>
               </div>
+              {!editing && (isPurchase || type === 'opening') && activeInvestors.length > 0 && l.product_id && (() => {
+                const inv = activeInvestors.find((x) => x.id === l.inv_id)
+                const cost = (Number(l.inv_qty) || 0) * lineRate(l)
+                const over = Number(l.inv_qty) > Number(l.qty) + 0.000001
+                return (
+                  <div className="mt-3 flex flex-wrap items-end gap-3 rounded-lg bg-sky-100/50 p-3">
+                    <Field label={t('invShareLine')} className="w-52">
+                      <Select value={l.inv_id} onChange={(e) => set(l.key, { inv_id: e.target.value, inv_qty: e.target.value && !l.inv_qty ? l.qty : e.target.value ? l.inv_qty : '' })}>
+                        <option value="">{t('invShareNone')}</option>
+                        {activeInvestors.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+                      </Select>
+                    </Field>
+                    {inv && (
+                      <>
+                        <Field label={t('invShareQty')} className="w-32" error={over ? t('invShareTooMuch') : undefined}>
+                          <Input type="number" min="0" step="any" inputMode="decimal" value={l.inv_qty} onChange={(e) => set(l.key, { inv_qty: e.target.value })} />
+                        </Field>
+                        <p className={cx('pb-2.5 text-xs', cost > inv.available + 0.005 ? 'text-red-700' : 'text-stone-600')}>
+                          {t('invShareCost', { amount: fmtMoney(cost, lang), name: inv.name, avail: fmtMoney(inv.available, lang) })}
+                          {Number(l.qty) > Number(l.inv_qty) && Number(l.inv_qty) > 0 && ` · ${t('invShareNone')}: ${fmtNum(Number(l.qty) - Number(l.inv_qty), 3)}`}
+                        </p>
+                      </>
+                    )}
+                  </div>
+                )
+              })()}
             </Card>
           )
         })}

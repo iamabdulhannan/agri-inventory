@@ -1,6 +1,6 @@
 import {
   AlertTriangle, ArrowDownToLine, ArrowUpFromLine, BarChart3, BookUser, CalendarClock, CheckCircle2, ChevronRight, FileText, NotebookPen,
-  History, Landmark, LayoutDashboard, LogOut, Menu, Moon, Package, PanelLeftClose, PanelLeftOpen, Settings, ShieldCheck, Sprout, Sun, X,
+  HandCoins, History, Landmark, LayoutDashboard, LogOut, Menu, Moon, Package, PanelLeftClose, PanelLeftOpen, Settings, ShieldCheck, Sprout, Sun, X,
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
@@ -24,6 +24,7 @@ const NAV: { to: string; key: TKey; icon: typeof Package; end?: boolean; admin?:
   { to: '/khata', key: 'navKhata', icon: BookUser },
   { to: '/roznamcha', key: 'navRoznamcha', icon: NotebookPen },
   { to: '/bank', key: 'bankNav', icon: Landmark },
+  { to: '/investors', key: 'navInvestors', icon: HandCoins, admin: true },
   { to: '/expiry', key: 'navExpiry', icon: CalendarClock },
   { to: '/history', key: 'navLedger', icon: History },
   { to: '/reports', key: 'navReports', icon: BarChart3 },

@@ -3,11 +3,12 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { bankEn, bankUr } from './i18n-parts/bank'
 import { khataEn, khataUr } from './i18n-parts/khata'
 import { saleEn, saleUr } from './i18n-parts/sale'
+import { investEn, investUr } from './i18n-parts/invest'
 
 export type Lang = 'en' | 'ur'
 
 const en = {
-  ...bankEn, ...saleEn, ...khataEn,
+  ...bankEn, ...saleEn, ...khataEn, ...investEn,
   appName: 'Agri Inventory',
   tagline: 'Stock & expiry control for pesticides, fertilizers and seeds',
 
@@ -162,6 +163,7 @@ const en = {
   auditBankBalance: 'Bank & wallet balance', auditChequesInHand: 'Cheques received, not cleared', auditBankOwed: 'Owed to banks (finance)', auditCropAdvances: 'Crop advances held (owed to farmers)',
   duesTodayCount: '{n} to pay today ({amount})', duesLateCount: '{n} late ({amount})', duesToday: 'Today', duesDaysLate: '{n} days late',
   repSoldAt: 'Sold at (avg)', repSales: 'Sales', repCost: 'Cost', repCostShort: 'cost', repProfit: 'Profit / loss', repLoss: 'Loss', repMoneyTotal: 'Sales and profit',
+  receiptNote: 'Note on receipts (Urdu)', receiptNoteHint: 'Printed at the bottom of every receipt. Leave empty to use the standard note.',
   navAudit: 'Audit', auditAdminOnly: 'Only the owner or an admin can open Audit.',
   errPeriodLocked: 'This date is in a locked year. Entries up to the lock date cannot be added, changed or deleted. The owner can unlock it in Audit.',
   auditTitle: 'Audit & year end',
@@ -338,7 +340,7 @@ const en = {
 export type TKey = keyof typeof en
 
 const ur: Record<TKey, string> = {
-  ...bankUr, ...saleUr, ...khataUr,
+  ...bankUr, ...saleUr, ...khataUr, ...investUr,
   appName: 'زرعی انوینٹری',
   tagline: 'زرعی ادویات، کھاد اور بیج کا اسٹاک اور ایکسپائری کنٹرول',
 
@@ -479,6 +481,7 @@ const ur: Record<TKey, string> = {
   auditBankBalance: 'بینک اور والٹ بیلنس', auditChequesInHand: 'وصول شدہ چیک، ابھی کلیئر نہیں', auditBankOwed: 'بینکوں کا قرض (فنانس)', auditCropAdvances: 'فصل ایڈوانس (کسانوں کی امانت)',
   duesTodayCount: 'آج {n} کی ادائیگی ({amount})', duesLateCount: '{n} کی تاریخ گزر گئی ({amount})', duesToday: 'آج', duesDaysLate: '{n} دن لیٹ',
   repSoldAt: 'فروخت ریٹ (اوسط)', repSales: 'فروخت', repCost: 'لاگت', repCostShort: 'لاگت', repProfit: 'نفع / نقصان', repLoss: 'نقصان', repMoneyTotal: 'فروخت اور منافع',
+  receiptNote: 'رسید پر نوٹ (اردو)', receiptNoteHint: 'ہر رسید کے آخر میں چھپے گا۔ خالی چھوڑیں تو معیاری نوٹ چھپے گا۔',
   navAudit: 'آڈٹ', auditAdminOnly: 'آڈٹ صرف مالک یا ایڈمن کھول سکتا ہے۔',
   errPeriodLocked: 'یہ تاریخ بند (لاک) سال میں ہے۔ لاک کی تاریخ تک کوئی اندراج شامل، تبدیل یا حذف نہیں ہو سکتا۔ مالک آڈٹ میں جا کر اسے کھول سکتا ہے۔',
   auditTitle: 'آڈٹ اور سال کا اختتام',
