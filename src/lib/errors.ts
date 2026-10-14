@@ -26,6 +26,7 @@ const MAP: [RegExp, TKey][] = [
   [/CANNOT_REMOVE_SELF/, 'errCannotRemoveSelf'],
   [/EDIT_VIA_INVOICE/, 'errEditViaInvoice'],
   [/PERIOD_LOCKED/, 'errPeriodLocked'],
+  [/SALE_HAS_RETURNS/, 'errSaleHasReturns'],
   [/INVESTOR_NO_STOCK/, 'errInvestorNoStock'],
   [/INVESTOR_NO_FUNDS/, 'errInvestorNoFunds'],
   [/INVESTOR_STOCK_LEFT/, 'errInvestorStockLeft'],

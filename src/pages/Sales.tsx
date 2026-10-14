@@ -1,8 +1,9 @@
-import { FileText, Pencil, Printer, Search, Trash2, Undo2 } from 'lucide-react'
+import { FileText, PenLine, Pencil, Printer, Search, Trash2, Undo2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { PrintHeader, ReportButtons } from '../components/domain'
 import { ReceiptModal } from '../components/Receipt'
+import { CorrectRates } from '../components/CorrectRates'
 import { Badge, Button, Card, Empty, ErrorBox, Field, Input, Loading, PageHeader, Tabs, useFeedback } from '../components/ui'
 import { useOrg } from '../lib/app'
 import { downloadCsv } from '../lib/csv'
@@ -37,6 +38,7 @@ export function Sales() {
   const [to, setTo] = useState(today)
   const [q, setQ] = useState('')
   const [receipt, setReceipt] = useState<string | null>(null)
+  const [correcting, setCorrecting] = useState<string | null>(null)
 
   const { data, error, loading, reload } = useLoad(async () => {
     if (tab === 'sales') {
@@ -163,6 +165,7 @@ export function Sales() {
                             <td className="no-print r whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                               <Button size="sm" variant="ghost" onClick={() => setReceipt(s.id)} aria-label={t('printReceipt')} title={t('printReceipt')}><Printer className="size-4" /></Button>
                               <Button size="sm" variant="ghost" onClick={() => nav(`/stock-in?type=return_in&invoice=${s.invoice_no}`)} aria-label={t('mv_return_in')} title={t('mv_return_in')}><Undo2 className="size-4" /></Button>
+                              {isAdmin && <Button size="sm" variant="ghost" onClick={() => setCorrecting(s.id)} aria-label={t('crAction')} title={t('crAction')}><PenLine className="size-4" /></Button>}
                               {isAdmin && <Button size="sm" variant="ghost" onClick={() => voidSale(s)} aria-label={t('voidDoc')} title={t('voidDoc')}><Trash2 className="size-4 text-red-600" /></Button>}
                             </td>
                           </tr>
@@ -212,6 +215,7 @@ export function Sales() {
         </Card>
       )}
       <ReceiptModal saleId={receipt} onClose={() => setReceipt(null)} />
+      <CorrectRates saleId={correcting} onClose={() => setCorrecting(null)} onSaved={(id) => { setCorrecting(null); refresh(); setReceipt(id) }} />
     </div>
   )
 }

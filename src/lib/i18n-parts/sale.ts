@@ -1,5 +1,13 @@
 /* Translations for the sale screens (merged into src/lib/i18n.tsx). Keep keys unique across parts. */
 export const saleEn = {
+  crTitle: 'Correct rates · Invoice #{n}', crTitleShort: 'Correct rates', crAction: 'Correct rates', crWas: 'was',
+  crOldTotal: 'Total before', crNewTotal: 'Corrected total',
+  crCollect: 'Collect {amount} more from the customer (cash book updates).',
+  crGiveBack: 'Give back {amount} to the customer (cash book updates).',
+  crKhataUp: '{name}\'s khata goes up by {amount}.', crKhataDown: '{name}\'s khata goes down by {amount}.',
+  crHint: 'Stock does not change. Totals, khata or cash, profit and reports update, and the change is kept in the audit trail.',
+  crConfirm: 'Change invoice #{n} from {from} to {to}?', crSaved: 'Invoice #{n} corrected',
+  errSaleHasReturns: 'Goods from this invoice were returned, so its rates can no longer be changed.',
   // rate mode (khata customers)
   saleRateLabel: 'Rate',
   saleRateCash: 'Cash rate',
@@ -27,6 +35,14 @@ export const saleEn = {
 }
 
 export const saleUr: Record<keyof typeof saleEn, string> = {
+  crTitle: 'ریٹ درست کریں · بل نمبر {n}', crTitleShort: 'ریٹ درست کریں', crAction: 'ریٹ درست کریں', crWas: 'پہلے',
+  crOldTotal: 'پہلے کل', crNewTotal: 'درست کل',
+  crCollect: 'گاہک سے {amount} مزید لیں (روزنامچہ اپ ڈیٹ ہو گا)۔',
+  crGiveBack: 'گاہک کو {amount} واپس کریں (روزنامچہ اپ ڈیٹ ہو گا)۔',
+  crKhataUp: '{name} کا کھاتہ {amount} بڑھ جائے گا۔', crKhataDown: '{name} کا کھاتہ {amount} کم ہو جائے گا۔',
+  crHint: 'اسٹاک تبدیل نہیں ہو گا۔ کل رقم، کھاتہ یا نقد، منافع اور رپورٹس اپ ڈیٹ ہوں گی، اور تبدیلی آڈٹ ریکارڈ میں رہے گی۔',
+  crConfirm: 'بل نمبر {n} کو {from} سے {to} کر دیں؟', crSaved: 'بل نمبر {n} درست ہو گیا',
+  errSaleHasReturns: 'اس بل کا مال واپس ہو چکا ہے، اس لیے اب اس کے ریٹ تبدیل نہیں ہو سکتے۔',
   saleRateLabel: 'ریٹ',
   saleRateCash: 'نقد ریٹ',
   saleRateCredit: 'ادھار ریٹ',
