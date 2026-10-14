@@ -29,12 +29,26 @@ const inOf = (r: SummaryRow) => r.purchased + r.returned_in
 const outOf = (r: SummaryRow) => r.sold + r.returned_out + r.damaged + r.expired
 const moved = (r: SummaryRow) => inOf(r) !== 0 || outOf(r) !== 0 || r.adjusted !== 0
 
-async function summary(orgId: string, from: string, to: string) {
-  const rows = await fetchAll<SummaryRow>((a, b) =>
-    supabase.rpc('stock_summary', { p_org: orgId, p_from: from, p_to: to }).order('product_id').range(a, b),
-  )
-  return rows.map(num)
+/** stock movement + what the sold quantity brought in (net of customer returns) */
+type ReportRow = SummaryRow & { soldQty: number; revenue: number; cost: number; profit: number }
+
+async function summary(orgId: string, from: string, to: string): Promise<ReportRow[]> {
+  const [rows, sales] = await Promise.all([
+    fetchAll<SummaryRow>((a, b) =>
+      supabase.rpc('stock_summary', { p_org: orgId, p_from: from, p_to: to }).order('product_id').range(a, b),
+    ),
+    fetchAll<ProductSalesRow>((a, b) =>
+      supabase.rpc('product_sales', { p_org: orgId, p_from: from, p_to: to }).order('product_id').range(a, b),
+    ),
+  ])
+  const byProduct = new Map(sales.map((x) => [x.product_id, x]))
+  return rows.map((r) => {
+    const x = byProduct.get(r.product_id)
+    return { ...num(r), soldQty: +(x?.qty ?? 0), revenue: +(x?.revenue ?? 0), cost: +(x?.cost ?? 0), profit: +(x?.profit ?? 0) }
+  })
 }
+/** average price one pack was sold at */
+const soldAt = (r: ReportRow) => (r.soldQty > 0 ? r.revenue / r.soldQty : 0)
 
 export function Reports() {
   const { t } = useI18n()
@@ -68,7 +82,7 @@ export function Reports() {
 }
 
 // ------------------------------------------------------------------ shared summary table
-function SummaryTable({ rows, catalog, detailed }: { rows: SummaryRow[]; catalog: Catalog; detailed: boolean }) {
+function SummaryTable({ rows, catalog, detailed }: { rows: ReportRow[]; catalog: Catalog; detailed: boolean }) {
   const { t, lang } = useI18n()
   const label = usePackLabel()
   const list = rows.map((r) => ({ r, p: catalog.byId.get(r.product_id)! })).filter((x) => x.p)
@@ -85,6 +99,7 @@ function SummaryTable({ rows, catalog, detailed }: { rows: SummaryRow[]; catalog
     tot[m].x += outOf(r) * b
     tot[m].c += r.closing * b
   }
+  const money = ordered.reduce((s, { r }) => ({ revenue: s.revenue + r.revenue, cost: s.cost + r.cost, profit: s.profit + r.profit }), { revenue: 0, cost: 0, profit: 0 })
   if (!ordered.length) return <Empty>{t('noData')}</Empty>
   const cell = (v: number, cls?: string) => <td className={cx('r num', v === 0 && 'text-stone-300', cls)}>{fmtNum(v, 3)}</td>
 
@@ -111,6 +126,9 @@ function SummaryTable({ rows, catalog, detailed }: { rows: SummaryRow[]; catalog
                 <th className="r">{t('out')}</th>
               </>
             )}
+            <th className="r">{t('repSoldAt')}</th>
+            <th className="r">{t('repSales')}</th>
+            <th className="r">{t('repProfit')}</th>
             <th className="r">{t('adjusted')}</th>
             <th className="r">{t('closing')}</th>
             <th className="r">{t('closingTotal')}</th>
@@ -137,6 +155,14 @@ function SummaryTable({ rows, catalog, detailed }: { rows: SummaryRow[]; catalog
                   {cell(outOf(r), 'text-orange-700 font-medium')}
                 </>
               )}
+              <td className="r num whitespace-nowrap">
+                {r.soldQty > 0 ? fmtMoney(soldAt(r), lang) : <span className="text-stone-300">—</span>}
+                {r.soldQty > 0 && r.cost > 0 && <div className="text-xs text-stone-500">{t('repCostShort')} {fmtMoney(r.cost / r.soldQty, lang)}</div>}
+              </td>
+              <td className="r num whitespace-nowrap">{r.revenue ? fmtMoney(r.revenue, lang) : <span className="text-stone-300">—</span>}</td>
+              <td className={cx('r num whitespace-nowrap font-semibold', r.profit > 0 && 'text-brand-700', r.profit < 0 && 'text-red-700')}>
+                {r.revenue || r.profit ? (r.profit < 0 ? `${t('repLoss')} ${fmtMoney(-r.profit, lang)}` : fmtMoney(r.profit, lang)) : <span className="font-normal text-stone-300">—</span>}
+              </td>
               {cell(r.adjusted)}
               <td className={cx('r num font-semibold', r.closing <= 0 && 'text-red-700')}>{fmtNum(r.closing, 3)}</td>
               <td className="r num whitespace-nowrap text-stone-600">{p.pack_unit === 'pcs' ? '' : fmtTotal(r.closing, p.pack_size, p.pack_unit, lang)}</td>
@@ -151,10 +177,22 @@ function SummaryTable({ rows, catalog, detailed }: { rows: SummaryRow[]; catalog
                 <td className="r num">{fmtBase(tot[m].o, m, lang)}</td>
                 {detailed ? <td className="r num" colSpan={2}>{fmtBase(tot[m].i, m, lang)}</td> : <td className="r num">{fmtBase(tot[m].i, m, lang)}</td>}
                 {detailed ? <td className="r num" colSpan={4}>{fmtBase(tot[m].x, m, lang)}</td> : <td className="r num">{fmtBase(tot[m].x, m, lang)}</td>}
+                <td colSpan={3} />
                 <td />
                 <td className="r num" colSpan={2}>{fmtBase(tot[m].c, m, lang)}</td>
               </tr>
             ) : null,
+          )}
+          {(money.revenue !== 0 || money.profit !== 0) && (
+            <tr>
+              <td colSpan={detailed ? 9 : 5}>{t('repMoneyTotal')}</td>
+              <td />
+              <td className="r num whitespace-nowrap">{fmtMoney(money.revenue, lang)}</td>
+              <td className={cx('r num whitespace-nowrap', money.profit < 0 ? 'text-red-700' : 'text-brand-700')}>
+                {money.profit < 0 ? `${t('repLoss')} ${fmtMoney(-money.profit, lang)}` : fmtMoney(money.profit, lang)}
+              </td>
+              <td colSpan={3} />
+            </tr>
           )}
         </tfoot>
       </table>
@@ -162,12 +200,12 @@ function SummaryTable({ rows, catalog, detailed }: { rows: SummaryRow[]; catalog
   )
 }
 
-function summaryCsv(name: string, rows: SummaryRow[], catalog: Catalog, t: ReturnType<typeof useI18n>['t']) {
-  downloadCsv(name, [t('product'), t('company'), t('packSize'), t('opening'), t('purchased'), t('returnIn'), t('sold'), t('returnOut'), t('damaged'), t('expiredCol'), t('adjusted'), t('closing'), t('closingTotal')],
+function summaryCsv(name: string, rows: ReportRow[], catalog: Catalog, t: ReturnType<typeof useI18n>['t']) {
+  downloadCsv(name, [t('product'), t('company'), t('packSize'), t('opening'), t('purchased'), t('returnIn'), t('sold'), t('returnOut'), t('damaged'), t('expiredCol'), t('repSoldAt'), t('repSales'), t('repCost'), t('repProfit'), t('adjusted'), t('closing'), t('closingTotal')],
     catalog.products
       .map((p) => ({ p, r: rows.find((r) => r.product_id === p.id) }))
       .filter((x) => x.r)
-      .map(({ p, r }) => [p.name, p.company_name, fmtPack(p.pack_size, p.pack_unit), r!.opening, r!.purchased, r!.returned_in, r!.sold, r!.returned_out, r!.damaged, r!.expired, r!.adjusted, r!.closing, fmtTotal(r!.closing, p.pack_size, p.pack_unit)]))
+      .map(({ p, r }) => [p.name, p.company_name, fmtPack(p.pack_size, p.pack_unit), r!.opening, r!.purchased, r!.returned_in, r!.sold, r!.returned_out, r!.damaged, r!.expired, r!.soldQty > 0 ? Math.round(soldAt(r!) * 100) / 100 : '', r!.revenue || '', r!.cost || '', r!.revenue || r!.profit ? r!.profit : '', r!.adjusted, r!.closing, fmtTotal(r!.closing, p.pack_size, p.pack_unit)]))
 }
 
 function Toolbar({ children, onExcel }: { children: React.ReactNode; onExcel?: () => void }) {
