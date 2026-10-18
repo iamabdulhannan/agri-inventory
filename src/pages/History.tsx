@@ -2,6 +2,7 @@ import { History as HistoryIcon, Pencil, Search, Trash2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { PrintHeader, ProductName, QtyCell, ReportButtons } from '../components/domain'
+import { Pagination } from '../components/Pagination'
 import { Button, Card, Empty, ErrorBox, Field, Input, Loading, PageHeader, Select, useFeedback } from '../components/ui'
 import { useOrg } from '../lib/app'
 import { loadCatalog } from '../lib/catalog'
@@ -11,6 +12,7 @@ import { errText } from '../lib/errors'
 import { fmtDate, monthOf, monthRange } from '../lib/format'
 import { useI18n } from '../lib/i18n'
 import { perKg } from '../lib/loose'
+import { usePaged } from '../lib/paging'
 import { supabase } from '../lib/supabase'
 import { ALL_TYPES, authorOf, type Movement, type MovementType } from '../lib/types'
 import { fmtPack, unitLabel } from '../lib/units'
@@ -57,6 +59,7 @@ export function History() {
       return terms.every((x) => hay.includes(x))
     })
   }, [data, q])
+  const pg = usePaged(rows, 'history', [from, to, type, product, q])
 
   const del = useDeleteLine()
 
@@ -114,66 +117,69 @@ export function History() {
           {rows.length === 0 ? (
             <Empty>{t('noEntries')}</Empty>
           ) : (
-            <div className="table-wrap">
-              <table className="tbl">
-                <thead>
-                  <tr>
-                    <th>{t('date')}</th>
-                    <th>{t('type')}</th>
-                    <th>{t('product')}</th>
-                    <th>{t('batch')}</th>
-                    <th className="r">{t('qty')}</th>
-                    <th className="r">{t('rate')}</th>
-                    <th>{t('party')}</th>
-                    <th>{t('reference')}</th>
-                    <th>{t('by')}</th>
-                    {isAdmin && <th className="no-print" />}
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((m) => {
-                    const p = m.batches ? data!.catalog.byId.get(m.batches.product_id) : undefined
-                    return (
-                      <tr key={m.id}>
-                        <td className="num whitespace-nowrap">{fmtDate(m.movement_date, lang)}</td>
-                        <td><MovementBadge type={m.type} /></td>
-                        <td>{p ? <ProductName p={p} /> : '—'}</td>
-                        <td className="num">{m.batches?.batch_no}</td>
-                        <td className="r">{p && <QtyCell packs={Number(m.qty)} p={p} strong />}</td>
-                        <td className="r num whitespace-nowrap">{m.unit_price == null ? '' : m.loose && p ? `${fmtMoney(perKg(Number(m.unit_price), Number(p.pack_size)), lang)} / ${unitLabel('kg', lang)}` : fmtMoney(m.unit_price, lang)}</td>
-                        <td>{m.party}{m.note && <div className="text-xs text-stone-500">{m.note}</div>}</td>
-                        <td className="num">{m.reference}</td>
-                        <td className="text-stone-500">{authorOf(m)}</td>
-                        {isAdmin && (
-                          <td className="no-print r">
-                            <div className="flex justify-end gap-1">
-                              {/* stock-in lines can be edited; purchase lines open the whole purchase */}
-                              {(m.type === 'purchase' || m.type === 'return_in') && !m.sale_id && !m.return_id && p && (
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => (m.purchase_id ? nav(`/stock-in?edit=${m.purchase_id}`) : setEditLine({ movement: m, product: p }))}
-                                  aria-label={t('edit')}
-                                  title={m.purchase_id ? t('editPurchaseShort') : t('edit')}
-                                >
-                                  <Pencil className="size-4" />
-                                </Button>
-                              )}
-                              {/* sale / invoice-return lines are voided with the whole invoice (Invoices page) */}
-                              {canDeleteLine(m) && (
-                                <Button size="sm" variant="ghost" onClick={() => del(m)} aria-label={t('delete')} title={t('delete')}>
-                                  <Trash2 className="size-4 text-red-600" />
-                                </Button>
-                              )}
-                            </div>
-                          </td>
-                        )}
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <>
+              <div className="table-wrap">
+                <table className="tbl">
+                  <thead>
+                    <tr>
+                      <th>{t('date')}</th>
+                      <th>{t('type')}</th>
+                      <th>{t('product')}</th>
+                      <th>{t('batch')}</th>
+                      <th className="r">{t('qty')}</th>
+                      <th className="r">{t('rate')}</th>
+                      <th>{t('party')}</th>
+                      <th>{t('reference')}</th>
+                      <th>{t('by')}</th>
+                      {isAdmin && <th className="no-print" />}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pg.items.map((m) => {
+                      const p = m.batches ? data!.catalog.byId.get(m.batches.product_id) : undefined
+                      return (
+                        <tr key={m.id}>
+                          <td className="num whitespace-nowrap">{fmtDate(m.movement_date, lang)}</td>
+                          <td><MovementBadge type={m.type} /></td>
+                          <td>{p ? <ProductName p={p} /> : '—'}</td>
+                          <td className="num">{m.batches?.batch_no}</td>
+                          <td className="r">{p && <QtyCell packs={Number(m.qty)} p={p} strong />}</td>
+                          <td className="r num whitespace-nowrap">{m.unit_price == null ? '' : m.loose && p ? `${fmtMoney(perKg(Number(m.unit_price), Number(p.pack_size)), lang)} / ${unitLabel('kg', lang)}` : fmtMoney(m.unit_price, lang)}</td>
+                          <td>{m.party}{m.note && <div className="text-xs text-stone-500">{m.note}</div>}</td>
+                          <td className="num">{m.reference}</td>
+                          <td className="text-stone-500">{authorOf(m)}</td>
+                          {isAdmin && (
+                            <td className="no-print r">
+                              <div className="flex justify-end gap-1">
+                                {/* stock-in lines can be edited; purchase lines open the whole purchase */}
+                                {(m.type === 'purchase' || m.type === 'return_in') && !m.sale_id && !m.return_id && p && (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => (m.purchase_id ? nav(`/stock-in?edit=${m.purchase_id}`) : setEditLine({ movement: m, product: p }))}
+                                    aria-label={t('edit')}
+                                    title={m.purchase_id ? t('editPurchaseShort') : t('edit')}
+                                  >
+                                    <Pencil className="size-4" />
+                                  </Button>
+                                )}
+                                {/* sale / invoice-return lines are voided with the whole invoice (Invoices page) */}
+                                {canDeleteLine(m) && (
+                                  <Button size="sm" variant="ghost" onClick={() => del(m)} aria-label={t('delete')} title={t('delete')}>
+                                    <Trash2 className="size-4 text-red-600" />
+                                  </Button>
+                                )}
+                              </div>
+                            </td>
+                          )}
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <Pagination pg={pg} />
+            </>
           )}
         </Card>
       )}

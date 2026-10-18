@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ExpiryBadge, Highlight, ProductName, QtyCell, ReportButtons, PrintHeader } from '../components/domain'
 import { usePackLabel } from '../lib/packLabel'
 import { ProductForm } from '../components/ProductForm'
+import { Pagination } from '../components/Pagination'
 import { FilterChip, FilterMenu, FilterOptions, FilterSection } from '../components/FilterMenu'
 import { Badge, Button, Card, Checkbox, Empty, ErrorBox, Loading, PageHeader, Select, useFeedback } from '../components/ui'
 import { daysBetween } from '../lib/format'
@@ -17,6 +18,7 @@ import { errText } from '../lib/errors'
 import { useI18n } from '../lib/i18n'
 import { fmtPack, fmtTotal } from '../lib/units'
 import { fmtMoney } from '../lib/money'
+import { usePaged } from '../lib/paging'
 
 type StockFilter = 'all' | 'in' | 'low' | 'out' | 'expiring'
 type SortKey = 'name' | 'stockHigh' | 'stockLow' | 'expiry' | 'value'
@@ -71,6 +73,7 @@ export function Products() {
     const f = cmp[sort]
     return f ? [...out].sort(f) : out
   }, [base, stockFilter, stockOf, sort])
+  const pg = usePaged(list, 'products', [q, category, company, stockFilter, sort, showInactive])
 
   const count = (f: StockFilter) => base.filter((p) => stockOf(p, f)).length
   const activeCount = [stockFilter !== 'all', category !== 'all', company !== 'all', sort !== 'name', showInactive].filter(Boolean).length
@@ -181,7 +184,7 @@ export function Products() {
                   </tr>
                 </thead>
                 <tbody>
-                  {list.map((p) => (
+                  {pg.items.map((p) => (
                     <tr key={p.id} className="cursor-pointer" onClick={() => nav(`/products/${p.id}`)}>
                       <td>
                         <div className="font-medium"><Highlight text={pick(p.name, p.name_ur)} q={q} /></div>
@@ -205,7 +208,7 @@ export function Products() {
             </div>
             {/* Mobile cards */}
             <ul className="divide-y divide-stone-100 md:hidden">
-              {list.map((p) => (
+              {pg.items.map((p) => (
                 <li key={p.id} className="flex items-center justify-between gap-3 px-4 py-3" onClick={() => nav(`/products/${p.id}`)}>
                   <div className="min-w-0">
                     <ProductName p={p} />
@@ -218,6 +221,7 @@ export function Products() {
                 </li>
               ))}
             </ul>
+            <Pagination pg={pg} />
           </>
         )}
       </Card>

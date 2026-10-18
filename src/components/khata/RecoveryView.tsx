@@ -11,8 +11,10 @@ import { fmtDate, monthRange } from '../../lib/format'
 import { useI18n } from '../../lib/i18n'
 import { DUE_TONE, dueGroupOf, dueText, loadDues, reminderText, waLink, type DueGroup } from '../../lib/khataMoney'
 import { fmtMoney } from '../../lib/money'
+import { PAGE_SIZES, usePaged } from '../../lib/paging'
 import type { PartyBalance } from '../../lib/types'
 import { PrintHeader, ReportButtons } from '../domain'
+import { Pagination } from '../Pagination'
 import { Badge, Card, Empty, ErrorBox, Loading, Segmented } from '../ui'
 
 type Filter = 'all' | 'overdue' | 'month'
@@ -74,6 +76,10 @@ export function RecoveryView({ parties, q }: { parties: PartyBalance[]; q: strin
       .filter((r) => terms.every((x) => `${r.party.name} ${r.party.phone ?? ''} ${r.party.address ?? ''}`.toLowerCase().includes(x)))
       .sort((a, b) => (a.due && b.due ? a.due.localeCompare(b.due) : 0) || b.total - a.total)
   }, [rows, filter, q, monthEnd])
+  // one flat list in group order (overdue, due soon, later, no date), paged;
+  // each page shows the headings of the groups it contains, with the full group count and sum
+  const ordered = useMemo(() => GROUPS.flatMap(({ g }) => shown.filter((r) => r.group === g)), [shown])
+  const pg = usePaged(ordered, 'khata-recovery', [filter, q])
 
   const exportCsv = () =>
     downloadCsv('khata-recovery', [t('name'), t('phone'), t('status'), t('khDueDate'), t('khOverdue'), t('khOutstanding')],
@@ -121,13 +127,14 @@ export function RecoveryView({ parties, q }: { parties: PartyBalance[]; q: strin
       ) : (
         <div className="space-y-4">
           {GROUPS.map(({ g, key, box, head }) => {
-            const list = shown.filter((r) => r.group === g)
+            const all = shown.filter((r) => r.group === g)
+            const list = pg.items.filter((r) => r.group === g)
             if (!list.length) return null
             return (
               <section key={g} className={cx('overflow-hidden rounded-xl border bg-surface shadow-sm print-plain', box)}>
                 <div className={cx('flex items-center justify-between gap-3 px-4 py-2.5 text-sm font-semibold', head)}>
-                  <span>{t(key)} ({list.length})</span>
-                  <span className="num">{fmtMoney(list.reduce((s, r) => s + r.total, 0), lang)}</span>
+                  <span>{t(key)} ({all.length})</span>
+                  <span className="num">{fmtMoney(all.reduce((s, r) => s + r.total, 0), lang)}</span>
                 </div>
                 <ul className="divide-y divide-stone-100">
                   {list.map((r) => {
@@ -168,6 +175,11 @@ export function RecoveryView({ parties, q }: { parties: PartyBalance[]; q: strin
               </section>
             )
           })}
+          {pg.total > PAGE_SIZES[0] && (
+            <div className="no-print overflow-hidden rounded-xl border border-stone-200 bg-surface shadow-sm">
+              <Pagination pg={pg} className="border-t-0" />
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -8,6 +8,7 @@ import { PartyAdvances } from '../components/khata/PartyAdvances'
 import { PaymentModal } from '../components/khata/PaymentModal'
 import { PendingCheques } from '../components/khata/PendingCheques'
 import { RecoveryView } from '../components/khata/RecoveryView'
+import { Pagination } from '../components/Pagination'
 import { PartyForm } from '../components/PartyForm'
 import { ReceiptModal } from '../components/Receipt'
 import { Badge, Button, Card, Empty, ErrorBox, Input, Loading, PageHeader, Tabs, useFeedback } from '../components/ui'
@@ -20,6 +21,7 @@ import { fmtDate } from '../lib/format'
 import { useI18n } from '../lib/i18n'
 import { ledgerLabel, loadAdvanceEntries, loadAdvances, loadDues, loadPendingCheques, type LedgerKind, type PartyWithRule } from '../lib/khataMoney'
 import { fmtMoney } from '../lib/money'
+import { usePaged } from '../lib/paging'
 import { loadParties } from '../lib/parties'
 import { supabase } from '../lib/supabase'
 import type { LedgerRow, PartyBalance, PartyKind } from '../lib/types'
@@ -62,6 +64,7 @@ export function KhataList() {
       .filter((p) => terms.every((x) => `${p.name} ${p.phone ?? ''} ${p.address ?? ''}`.toLowerCase().includes(x)))
       .sort((a, b) => (view === 'advance' ? a.balance - b.balance : b.balance - a.balance) || a.name.localeCompare(b.name))
   }, [data, view, q])
+  const pg = usePaged(list, 'khata-parties', [view, q])
 
   const receivable = (data ?? []).filter((p) => p.kind === 'customer' && p.balance > 0).reduce((s, p) => s + p.balance, 0)
   const payable = (data ?? []).filter((p) => p.kind === 'supplier' && p.balance > 0).reduce((s, p) => s + p.balance, 0)
@@ -150,7 +153,7 @@ export function KhataList() {
                   </tr>
                 </thead>
                 <tbody>
-                  {list.map((p) => (
+                  {pg.items.map((p) => (
                     <tr key={p.id} className="cursor-pointer" onClick={() => nav(`/khata/${p.id}`)}>
                       <td>
                         <div className="font-medium">
@@ -168,6 +171,7 @@ export function KhataList() {
               </table>
             </div>
           )}
+          <Pagination pg={pg} />
         </Card>
       )}
 
@@ -212,6 +216,8 @@ export function KhataDetail() {
       cheques, dues, advances, entries,
     }
   }, [id, version, org.id])
+  // hook before the early returns: page through the ledger, totals stay over all rows
+  const pg = usePaged(data?.ledger ?? [], 'khata-ledger', [id])
 
   if (loading && !data) return <Loading />
   if (error) return <ErrorBox onRetry={reload}>{errText(error, t)}</ErrorBox>
@@ -291,8 +297,8 @@ export function KhataDetail() {
                 </tr>
               </thead>
               <tbody>
-                {ledger.map((r, i) => (
-                  <tr key={i} className={cx((r.kind === 'sale' || r.kind === 'return') && 'cursor-pointer')} onClick={() => (r.kind === 'sale' || r.kind === 'return') && r.doc_id && setReceipt(r.doc_id)}>
+                {pg.items.map((r, i) => (
+                  <tr key={pg.offset + i} className={cx((r.kind === 'sale' || r.kind === 'return') && 'cursor-pointer')} onClick={() => (r.kind === 'sale' || r.kind === 'return') && r.doc_id && setReceipt(r.doc_id)}>
                     <td className="num whitespace-nowrap">{fmtDate(r.entry_date, lang)}</td>
                     <td>
                       <Badge tone={r.kind === 'bank_paid' || r.kind === 'advance_moved' ? 'blue' : r.kind === 'receipt' || r.kind === 'payment' || r.kind === 'return' ? 'green' : r.kind === 'opening' ? 'stone' : isCustomer ? 'amber' : 'red'}>{ledgerLabel(r.kind, t)}</Badge>
@@ -316,6 +322,7 @@ export function KhataDetail() {
             </table>
           </div>
         )}
+        <Pagination pg={pg} />
       </Card>
 
       {isCustomer && advances && (

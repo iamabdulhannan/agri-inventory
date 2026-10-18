@@ -1,5 +1,6 @@
 /* Translations for the bank screens (merged into src/lib/i18n.tsx). Keep keys unique across parts. */
 export const bankEn = {
+  bankNewKhataHint: '{name} has no khata yet. A khata account will be made for it, so what the bank paid shows there. Buy from {name} on khata (choose it as supplier) so its bills are set against this.',
   // page
   bankNav: 'Bank',
   bankTitle: 'Bank',
@@ -198,6 +199,7 @@ export const bankEn = {
 }
 
 export const bankUr: Record<keyof typeof bankEn, string> = {
+  bankNewKhataHint: '{name} کا ابھی کھاتہ نہیں۔ اس کا کھاتہ بن جائے گا تاکہ بینک کی ادائیگی وہاں نظر آئے۔ {name} سے خریداری کھاتے پر کریں (سپلائر میں اسے چنیں) تاکہ اس کے بل اس رقم سے کٹیں۔',
   // page
   bankNav: 'بینک',
   bankTitle: 'بینک',

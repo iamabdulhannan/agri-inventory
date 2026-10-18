@@ -4,7 +4,9 @@ import { useSearchParams } from 'react-router-dom'
 import { ProductPicker } from '../components/domain'
 import { PartyPicker } from '../components/PartyPicker'
 import { AccountPicker } from '../components/AccountPicker'
-import { ReceiptModal } from '../components/Receipt'
+import { ReceiptModal, type ReceiptData, type ReceiptLine, type SaleRow } from '../components/Receipt'
+import { takeInvoiceNumber } from '../lib/offline/device'
+import { applyChange, type ApplyResult } from '../lib/offline/sync'
 import { Button, Card, Checkbox, ErrorBox, Field, Input, Loading, PageHeader, Select, useFeedback, Segmented } from '../components/ui'
 import { useAccounts } from '../lib/accounts'
 import { useOrg } from '../lib/app'
@@ -41,7 +43,7 @@ const blank = (product_id = '', batch_id = '', qty = '', rate = ''): Line => ({ 
 
 export function StockOut() {
   const { t, lang } = useI18n()
-  const { org, today, refresh, version } = useOrg()
+  const { org, today, refresh, version, profile } = useOrg()
   const { toast } = useFeedback()
   const [params, setParams] = useSearchParams()
   const initialType = (OUT_TYPES as string[]).includes(params.get('type') ?? '') ? (params.get('type') as MovementType) : 'sale'
@@ -68,6 +70,7 @@ export function StockOut() {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [receiptFor, setReceiptFor] = useState<string | null>(null)
+  const [localReceipt, setLocalReceipt] = useState<ReceiptData | null>(null)
   // credit sale extras (only for khata customers)
   const [rateMode, setRateMode] = useState<RateMode>('cash')
   const [markupPct, setMarkupPct] = useState('')
@@ -226,6 +229,34 @@ export function StockOut() {
     if (params.toString()) setParams({})
   }
 
+  /** receipt of a sale saved offline, from the screen's own data */
+  const offlineReceipt = (invNo: number | null): ReceiptData => {
+    const groups = new Map<string, ReceiptLine>()
+    for (const l of lines) {
+      const p = catalog.byId.get(l.product_id)
+      if (!p) continue
+      const loose = looseOf(l)
+      const key = `${p.id}|${loose}|${l.rate}`
+      const g = groups.get(key)
+      const qty = Number(l.qty) || 0
+      if (g) { g.qty += qty; g.amount += amountOf(l) }
+      else groups.set(key, { key, name: p.name, name_ur: p.name_ur, pack: { pack_size: p.pack_size, pack_unit: p.pack_unit, pack_type: p.pack_type }, qty, rate: Number(l.rate) || 0, amount: amountOf(l), loose })
+    }
+    const acc = (accounts ?? []).find((a) => a.id === account)
+    return {
+      sale: {
+        id: 'offline', org_id: org.id, invoice_no: invNo ?? 0, sale_date: date, party_id: partyId || null, customer_name: customer?.name ?? (party || null),
+        subtotal, discount: disc, markup, total, paid: paidNum, advance_used: advNum, advance_id: adv?.id ?? null,
+        due_date: due > 0 && dueDate ? dueDate : null, note: note || null, created_at: new Date().toISOString(),
+        created_by_name: profile?.full_name ?? null,
+      } as unknown as SaleRow,
+      lines: [...groups.values()],
+      party: customer ? { name: customer.name, phone: customer.phone, balance: r2(customer.balance + due) } : null,
+      advance: advNum > 0 && adv ? [adv.crop, adv.season].filter(Boolean).join(' ') : null,
+      account: paidNum > 0 && acc ? acc.name : null,
+    }
+  }
+
   const save = async () => {
     setErr('')
     for (const l of lines) {
@@ -261,14 +292,37 @@ export function StockOut() {
         args.p_advance = adv.id
         args.p_advance_amount = advNum
       }
-      const { data: saleId, error } = await supabase.rpc('record_sale', args)
+      // this device's reserved invoice number: the receipt has its final number even offline
+      const invNo = takeInvoiceNumber(org.id)
+      if (invNo) args.p_invoice_no = invNo
+      delete args.p_org
+      const who = customer?.name ?? (party || t('walkIn'))
+      const label = [invNo ? `INV-${invNo}` : '', who, fmtMoney(total, lang)].filter(Boolean).join(' · ')
+      let res: ApplyResult
+      try {
+        res = await applyChange(org.id, 'record_sale', args, label, invNo)
+      } catch (e) {
+        setBusy(false)
+        return setErr(errText(e, t))
+      }
       setBusy(false)
-      if (error) return setErr(errText(error, t))
-      const { data: s } = await supabase.from('sales').select('invoice_no').eq('id', saleId as string).single()
-      toast(t('saleSaved', { n: s?.invoice_no ?? '' }))
+      if (res.status === 'queued') {
+        // no internet: keep it on this device, print from what we have here
+        setLocalReceipt(offlineReceipt(invNo))
+        toast(t('offSavedOffline'))
+        reset()
+        return
+      }
+      const saleId = res.result as string
+      let no: number | string = invNo ?? ''
+      if (!invNo) {
+        const { data: s } = await supabase.from('sales').select('invoice_no').eq('id', saleId).single()
+        no = s?.invoice_no ?? ''
+      }
+      toast(t('saleSaved', { n: no }))
       reset()
       refresh()
-      setReceiptFor(saleId as string)
+      setReceiptFor(saleId)
       return
     }
     const { data: n, error } = await supabase.rpc('record_stock_out', {
@@ -654,7 +708,7 @@ export function StockOut() {
         </Button>
       </Card>
 
-      <ReceiptModal saleId={receiptFor} onClose={() => setReceiptFor(null)} onNewSale={() => setReceiptFor(null)} />
+      <ReceiptModal saleId={receiptFor} local={localReceipt} onClose={() => { setReceiptFor(null); setLocalReceipt(null) }} onNewSale={() => { setReceiptFor(null); setLocalReceipt(null) }} />
     </div>
   )
 }

@@ -8,8 +8,10 @@ import { errText } from '../../lib/errors'
 import { useI18n } from '../../lib/i18n'
 import { cropLabel, type CropAdvance } from '../../lib/khataMoney'
 import { fmtMoney } from '../../lib/money'
+import { usePaged } from '../../lib/paging'
 import type { PartyBalance } from '../../lib/types'
 import { PrintHeader, ReportButtons } from '../domain'
+import { Pagination } from '../Pagination'
 import { Badge, Button, Card, Empty, ErrorBox, Loading, Segmented, Select, useFeedback } from '../ui'
 import { NewAdvanceModal } from './AdvanceModals'
 
@@ -48,6 +50,7 @@ export function AdvancesView({
       .filter((a) => terms.every((x) => `${a.party_name} ${a.party_phone ?? ''} ${a.crop} ${cropLabel(a.crop, t)} ${a.season ?? ''}`.toLowerCase().includes(x)))
       .sort((a, b) => b.balance - a.balance || a.party_name.localeCompare(b.party_name))
   }, [advances, status, crop, q, t])
+  const pg = usePaged(list, 'khata-crop-advances', [status, crop, q])
 
   const perCrop = useMemo(() => {
     const m = new Map<string, { crop: string; n: number; deposited: number; used: number; left: number }>()
@@ -131,7 +134,7 @@ export function AdvancesView({
                     </tr>
                   </thead>
                   <tbody>
-                    {list.map((a) => (
+                    {pg.items.map((a) => (
                       <tr key={a.id} className="cursor-pointer" onClick={() => nav(`/khata/${a.party_id}#advances`)}>
                         <td>
                           <div className="font-medium">{a.party_name}</div>
@@ -161,6 +164,7 @@ export function AdvancesView({
                 </table>
               </div>
             )}
+            <Pagination pg={pg} />
           </Card>
         </>
       )}

@@ -13,6 +13,7 @@ import type { ExpiryAlert } from '../lib/types'
 import { fmtPack } from '../lib/units'
 import { Badge } from './ui'
 import { DuesBar } from './DuesBar'
+import { InstallButton, OfflineAgent, OfflineBanner, SyncStatus, UpdateToast } from './Offline'
 import { cx } from '../lib/cx'
 
 const NAV: { to: string; key: TKey; icon: typeof Package; end?: boolean; admin?: boolean }[] = [
@@ -192,6 +193,8 @@ export function Layout() {
 
   return (
     <div className="min-h-screen">
+      <OfflineAgent />
+      <UpdateToast />
       <div ref={topRef} className="sticky top-0 z-40">
         <header className="no-print flex h-14 items-center gap-3 border-b border-stone-200 bg-surface px-4 lg:px-6">
           <button
@@ -206,6 +209,7 @@ export function Layout() {
           <div className="mx-2 hidden h-6 w-px bg-stone-200 sm:block" />
           <span className="hidden truncate text-sm font-medium text-stone-600 sm:block">{org.name}</span>
           <div className="ms-auto flex items-center gap-2">
+            <SyncStatus />
             <ThemeToggle />
             <LangToggle />
             <div className="relative" ref={menuRef}>
@@ -220,6 +224,7 @@ export function Layout() {
                     <Badge tone="green">{t(`role_${role ?? 'staff'}`)}</Badge>
                     <span className="truncate text-stone-600">{org.name}</span>
                   </div>
+                  <InstallButton className="mt-2" />
                   <button onClick={signOut} className="mt-3 flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-red-700 hover:bg-red-50 cursor-pointer">
                     <LogOut className="size-4 rtl:rotate-180" /> {t('signOut')}
                   </button>
@@ -228,6 +233,7 @@ export function Layout() {
             </div>
           </div>
         </header>
+        <OfflineBanner />
         {!hideBar && <ExpiryBar />}
         <DuesBar />
       </div>

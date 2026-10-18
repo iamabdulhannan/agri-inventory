@@ -47,6 +47,8 @@ React + Vite + Tailwind on the front end, Supabase (Postgres + Auth) on the back
    15. `supabase/migrations/015_investments.sql`: investors (capital, their stock, profit share, withdraw / settle)
    16. `supabase/migrations/016_receipt_note.sql`: shop's own Urdu note on receipts (optional)
    17. `supabase/migrations/017_correct_sale_rates.sql`: correct the rates of a saved invoice (owner / admin)
+   18. `supabase/migrations/018_refresh_sale_costs.sql`: sales follow corrected purchase rates (profit fix)
+   19. `supabase/migrations/019_offline.sql`: offline mode (each change applied once, reserved invoice numbers per device)
 3. Under **Authentication → URL Configuration**:
    - Set **Site URL** to your app URL (`http://localhost:5173` while developing).
    - Add `http://localhost:5173/**` and your production URL `/**` to **Redirect URLs**.

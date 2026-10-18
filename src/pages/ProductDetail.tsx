@@ -1,9 +1,10 @@
 import { ArrowDownToLine, ArrowLeft, ArrowUpFromLine, Pencil, Power, Scale, Trash2 } from 'lucide-react'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ExpiryBadge, QtyCell } from '../components/domain'
 import { usePackLabel } from '../lib/packLabel'
 import { ProductForm } from '../components/ProductForm'
+import { Pagination } from '../components/Pagination'
 import { Badge, Button, Card, Empty, ErrorBox, Field, Input, Loading, Modal, Textarea, useFeedback } from '../components/ui'
 import { useOrg } from '../lib/app'
 import { loadCatalog } from '../lib/catalog'
@@ -12,6 +13,7 @@ import { errText } from '../lib/errors'
 import { fmtDate } from '../lib/format'
 import { useI18n } from '../lib/i18n'
 import { perKg } from '../lib/loose'
+import { usePaged } from '../lib/paging'
 import { supabase } from '../lib/supabase'
 import { authorOf, type BatchStock, type Movement } from '../lib/types'
 import { fmtNum, unitLabel } from '../lib/units'
@@ -48,13 +50,19 @@ export function ProductDetail() {
     return { catalog, batches, moves: (moves.data ?? []) as Movement[] }
   }, [org.id, id, version])
 
+  // batches with stock first, then the empty ones (greyed)
+  const { withStock, batchRows } = useMemo(() => {
+    const all = data?.batches ?? []
+    const withStock = all.filter((b) => Number(b.qty) > 0)
+    return { withStock, batchRows: [...withStock, ...all.filter((b) => Number(b.qty) <= 0)] }
+  }, [data])
+  const batchPg = usePaged(batchRows, 'productBatches', [id])
+  const movesPg = usePaged(data?.moves ?? [], 'productHistory', [id])
+
   if (loading && !data) return <Loading />
   if (error) return <ErrorBox onRetry={reload}>{errText(error, t)}</ErrorBox>
   const p = data?.catalog.byId.get(id)
   if (!data || !p) return <Empty>{t('noData')}</Empty>
-
-  const withStock = data.batches.filter((b) => Number(b.qty) > 0)
-  const empty = data.batches.filter((b) => Number(b.qty) <= 0)
 
   const toggleActive = async () => {
     const { error } = await supabase.from('products').update({ is_active: !p.is_active }).eq('id', p.id)
@@ -137,34 +145,37 @@ export function ProductDetail() {
         {data.batches.length === 0 ? (
           <Empty>{t('noBatches')}</Empty>
         ) : (
-          <div className="table-wrap">
-            <table className="tbl">
-              <thead>
-                <tr>
-                  <th>{t('batchNo')}</th>
-                  <th>{t('mfgDate')}</th>
-                  <th>{t('expiryDate')}</th>
-                  <th className="r">{t('stock')}</th>
-                  {isAdmin && <th />}
-                </tr>
-              </thead>
-              <tbody>
-                {[...withStock, ...empty].map((b) => (
-                  <tr key={b.id} className={Number(b.qty) <= 0 ? 'text-stone-400' : undefined}>
-                    <td className="num font-medium">{b.batch_no}</td>
-                    <td className="num">{fmtDate(b.mfg_date, lang)}</td>
-                    <td>{Number(b.qty) > 0 ? <ExpiryBadge date={b.expiry_date} /> : <span className="num">{fmtDate(b.expiry_date, lang)}</span>}</td>
-                    <td className="r"><QtyCell packs={Number(b.qty)} p={p} strong={Number(b.qty) > 0} /></td>
-                    {isAdmin && (
-                      <td className="r">
-                        <Button size="sm" variant="ghost" onClick={() => setAdjusting(b)}><Scale className="size-4" /> {t('adjust')}</Button>
-                      </td>
-                    )}
+          <>
+            <div className="table-wrap">
+              <table className="tbl">
+                <thead>
+                  <tr>
+                    <th>{t('batchNo')}</th>
+                    <th>{t('mfgDate')}</th>
+                    <th>{t('expiryDate')}</th>
+                    <th className="r">{t('stock')}</th>
+                    {isAdmin && <th />}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {batchPg.items.map((b) => (
+                    <tr key={b.id} className={Number(b.qty) <= 0 ? 'text-stone-400' : undefined}>
+                      <td className="num font-medium">{b.batch_no}</td>
+                      <td className="num">{fmtDate(b.mfg_date, lang)}</td>
+                      <td>{Number(b.qty) > 0 ? <ExpiryBadge date={b.expiry_date} /> : <span className="num">{fmtDate(b.expiry_date, lang)}</span>}</td>
+                      <td className="r"><QtyCell packs={Number(b.qty)} p={p} strong={Number(b.qty) > 0} /></td>
+                      {isAdmin && (
+                        <td className="r">
+                          <Button size="sm" variant="ghost" onClick={() => setAdjusting(b)}><Scale className="size-4" /> {t('adjust')}</Button>
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <Pagination pg={batchPg} />
+          </>
         )}
       </Card>
 
@@ -172,60 +183,63 @@ export function ProductDetail() {
         {data.moves.length === 0 ? (
           <Empty>{t('noActivity')}</Empty>
         ) : (
-          <div className="table-wrap">
-            <table className="tbl">
-              <thead>
-                <tr>
-                  <th>{t('date')}</th>
-                  <th>{t('type')}</th>
-                  <th>{t('batch')}</th>
-                  <th className="r">{t('qty')}</th>
-                  <th className="r">{t('rate')}</th>
-                  <th>{t('party')}</th>
-                  <th>{t('reference')}</th>
-                  <th>{t('by')}</th>
-                  {isAdmin && <th className="no-print" />}
-                </tr>
-              </thead>
-              <tbody>
-                {data.moves.map((m) => (
-                  <tr key={m.id}>
-                    <td className="num whitespace-nowrap">{fmtDate(m.movement_date, lang)}</td>
-                    <td><MovementBadge type={m.type} /></td>
-                    <td className="num">{m.batches?.batch_no}</td>
-                    <td className="r"><QtyCell packs={Number(m.qty)} p={p} /></td>
-                    <td className="r num whitespace-nowrap">{m.unit_price == null ? '' : m.loose && p ? `${fmtMoney(perKg(Number(m.unit_price), Number(p.pack_size)), lang)} / ${unitLabel('kg', lang)}` : fmtMoney(m.unit_price, lang)}</td>
-                    <td>{m.party}</td>
-                    <td className="num">{m.reference}</td>
-                    <td className="text-stone-500">{authorOf(m)}</td>
-                    {isAdmin && (
-                      <td className="no-print r">
-                        <div className="flex justify-end gap-1">
-                          {isStockInLine(m) && (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => (m.purchase_id ? nav(`/stock-in?edit=${m.purchase_id}`) : setEditLine({ movement: m, product: p }))}
-                              aria-label={t('edit')}
-                              title={m.purchase_id ? t('editPurchaseShort') : t('edit')}
-                            >
-                              <Pencil className="size-4" />
-                            </Button>
-                          )}
-                          {/* sale / invoice-return lines are voided with the whole invoice (Invoices page) */}
-                          {canDeleteLine(m) && (
-                            <Button size="sm" variant="ghost" onClick={() => delLine(m)} aria-label={t('delete')} title={t('delete')}>
-                              <Trash2 className="size-4 text-red-600" />
-                            </Button>
-                          )}
-                        </div>
-                      </td>
-                    )}
+          <>
+            <div className="table-wrap">
+              <table className="tbl">
+                <thead>
+                  <tr>
+                    <th>{t('date')}</th>
+                    <th>{t('type')}</th>
+                    <th>{t('batch')}</th>
+                    <th className="r">{t('qty')}</th>
+                    <th className="r">{t('rate')}</th>
+                    <th>{t('party')}</th>
+                    <th>{t('reference')}</th>
+                    <th>{t('by')}</th>
+                    {isAdmin && <th className="no-print" />}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {movesPg.items.map((m) => (
+                    <tr key={m.id}>
+                      <td className="num whitespace-nowrap">{fmtDate(m.movement_date, lang)}</td>
+                      <td><MovementBadge type={m.type} /></td>
+                      <td className="num">{m.batches?.batch_no}</td>
+                      <td className="r"><QtyCell packs={Number(m.qty)} p={p} /></td>
+                      <td className="r num whitespace-nowrap">{m.unit_price == null ? '' : m.loose && p ? `${fmtMoney(perKg(Number(m.unit_price), Number(p.pack_size)), lang)} / ${unitLabel('kg', lang)}` : fmtMoney(m.unit_price, lang)}</td>
+                      <td>{m.party}</td>
+                      <td className="num">{m.reference}</td>
+                      <td className="text-stone-500">{authorOf(m)}</td>
+                      {isAdmin && (
+                        <td className="no-print r">
+                          <div className="flex justify-end gap-1">
+                            {isStockInLine(m) && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => (m.purchase_id ? nav(`/stock-in?edit=${m.purchase_id}`) : setEditLine({ movement: m, product: p }))}
+                                aria-label={t('edit')}
+                                title={m.purchase_id ? t('editPurchaseShort') : t('edit')}
+                              >
+                                <Pencil className="size-4" />
+                              </Button>
+                            )}
+                            {/* sale / invoice-return lines are voided with the whole invoice (Invoices page) */}
+                            {canDeleteLine(m) && (
+                              <Button size="sm" variant="ghost" onClick={() => delLine(m)} aria-label={t('delete')} title={t('delete')}>
+                                <Trash2 className="size-4 text-red-600" />
+                              </Button>
+                            )}
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <Pagination pg={movesPg} />
+          </>
         )}
       </Card>
 

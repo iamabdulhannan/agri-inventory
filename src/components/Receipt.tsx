@@ -18,7 +18,7 @@ import { Button, ErrorBox, Loading, Modal } from './ui'
 type Paper = '80mm' | 'a4'
 const PAPER_KEY = 'agri.receiptPaper'
 
-interface Line {
+export interface ReceiptLine {
   key: string
   name: string
   name_ur: string | null
@@ -30,10 +30,10 @@ interface Line {
   loose: boolean
 }
 /** sale row with the money columns of migration 013 (missing before it runs) */
-type SaleRow = Sale & { markup?: number | null; advance_used?: number | null; advance_id?: string | null; due_date?: string | null }
-interface ReceiptData {
+export type SaleRow = Sale & { markup?: number | null; advance_used?: number | null; advance_id?: string | null; due_date?: string | null }
+export interface ReceiptData {
   sale: SaleRow
-  lines: Line[]
+  lines: ReceiptLine[]
   party: { name: string; phone: string | null; balance: number } | null
   /** crop advance the bill was (partly) paid from, e.g. "Potato 2026" */
   advance: string | null
@@ -53,7 +53,7 @@ async function loadReceipt(saleId: string): Promise<ReceiptData> {
   if (e1) throw e1
   if (e2) throw e2
   // FEFO may split one item over several batches: merge them back per product + rate
-  const map = new Map<string, Line>()
+  const map = new Map<string, ReceiptLine>()
   type Row = { qty: number; unit_price: number; loose?: boolean; batches: { products: { id: string; name: string; name_ur: string | null; pack_size: number; pack_unit: PackUnit; pack_type: PackType } } }
   for (const m of (moves ?? []) as unknown as Row[]) {
     const p = m.batches.products
@@ -117,7 +117,7 @@ function ReceiptView({ data, paper }: { data: ReceiptData; paper: Paper }) {
       </div>
       <div className="my-2 border-t border-dashed border-black" />
       <div className={row}>
-        <span>{t('invoiceNum')} <b className="num">{sale.invoice_no}</b></span>
+        <span>{t('invoiceNum')} <b className="num">{sale.invoice_no || '—'}</b></span>
         <span className="num">{fmtDate(sale.sale_date, lang)} {time}</span>
       </div>
       <div>
@@ -185,7 +185,7 @@ function ReceiptView({ data, paper }: { data: ReceiptData; paper: Paper }) {
 }
 
 /** Preview + print a sale receipt */
-export function ReceiptModal({ saleId, onClose, onNewSale }: { saleId: string | null; onClose: () => void; onNewSale?: () => void }) {
+export function ReceiptModal({ saleId, local, onClose, onNewSale }: { saleId: string | null; local?: ReceiptData | null; onClose: () => void; onNewSale?: () => void }) {
   const { t } = useI18n()
   const [paper, setPaper] = useState<Paper>(() => {
     try {
@@ -195,7 +195,10 @@ export function ReceiptModal({ saleId, onClose, onNewSale }: { saleId: string | 
     }
   })
   const [printing, setPrinting] = useState(false)
-  const { data, error, loading } = useLoad(() => (saleId ? loadReceipt(saleId) : Promise.resolve(null)), [saleId])
+  const loaded = useLoad(() => (saleId ? loadReceipt(saleId) : Promise.resolve(null)), [saleId])
+  // a sale saved offline: its receipt is built from what is on this device
+  const data = local ?? loaded.data
+  const { error, loading } = loaded
 
   const choosePaper = (p: Paper) => {
     setPaper(p)
@@ -231,7 +234,7 @@ export function ReceiptModal({ saleId, onClose, onNewSale }: { saleId: string | 
 
   return (
     <Modal
-      open={!!saleId}
+      open={!!saleId || !!local}
       onClose={onClose}
       title={t('receipt')}
       footer={
@@ -250,7 +253,8 @@ export function ReceiptModal({ saleId, onClose, onNewSale }: { saleId: string | 
         </>
       }
     >
-      {loading && !data ? <Loading /> : error ? <ErrorBox>{errText(error, t)}</ErrorBox> : data && (
+      {local && <div className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">{t('offSavedOffline')}</div>}
+      {loading && !data ? <Loading /> : error && !local ? <ErrorBox>{errText(error, t)}</ErrorBox> : data && (
         <div className="rounded-lg bg-stone-100 p-3">
           <div className="rounded bg-white p-3 shadow-sm">
             <ReceiptView data={data} paper={paper} />

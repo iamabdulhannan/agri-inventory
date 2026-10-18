@@ -21,6 +21,7 @@ import { fmtMoney, r2 } from '../lib/money'
 import { loadParties } from '../lib/parties'
 import { useAccounts } from '../lib/accounts'
 import { loadInvestors, type InvestorRow } from '../lib/investors'
+import { applyChange, type ApplyResult } from '../lib/offline/sync'
 
 interface Line {
   key: number
@@ -204,8 +205,7 @@ export function StockIn() {
       nav('/sales?tab=purchases')
       return
     }
-    const { data: n, error } = await supabase.rpc('record_stock_in', {
-      p_org: org.id,
+    const args: Record<string, unknown> = {
       p_date: date,
       p_type: type === 'opening' ? 'purchase' : type,
       p_lines: lines.map((l) => ({
@@ -224,9 +224,30 @@ export function StockIn() {
       p_opening: type === 'opening',
       // only sent when used, so purchases still save before migration 013
       ...(isPurchase && paidNum > 0 && account ? { p_account: account } : {}),
-    })
+    }
+    const supplierLabel = data.suppliers.find((x) => x.id === partyId)?.name ?? supplierName() ?? ''
+    const label = [type === 'opening' ? t('openingStock') : t(`mv_${type}`), supplierLabel, reference, isPurchase && total ? fmtMoney(total, lang) : ''].filter(Boolean).join(' · ')
+    let res: ApplyResult
+    try {
+      res = await applyChange(org.id, 'record_stock_in', args, label)
+    } catch (e) {
+      setBusy(false)
+      return setErr(errText(e, t))
+    }
     setBusy(false)
-    if (error) return setErr(errText(error, t))
+    if (res.status === 'queued') {
+      // no internet: kept on this device (investor shares can be added from Investors once it is synced)
+      toast(t('offSavedOffline'))
+      setLines([blank()])
+      setParty('')
+      setPartyId('')
+      setPaid('')
+      setAccount('')
+      setReference('')
+      setNote('')
+      return
+    }
+    const n = res.result as string | null
     let msg = t('stockInSaved')
     if (n) {
       const { data: pur } = await supabase.from('purchases').select('purchase_no').eq('id', n as string).single()

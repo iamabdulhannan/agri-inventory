@@ -2,6 +2,7 @@ import { Banknote, ChevronDown, Landmark, Pencil, Plus, ShieldCheck, Trash2 } fr
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { AccountPicker } from '../AccountPicker'
+import { Pagination } from '../Pagination'
 import { Badge, Button, Card, Checkbox, Empty, ErrorBox, Field, Input, Loading, Modal, Segmented, Select, Textarea, useFeedback } from '../ui'
 import { useAccounts } from '../../lib/accounts'
 import { useOrg } from '../../lib/app'
@@ -11,6 +12,7 @@ import { errText } from '../../lib/errors'
 import { fmtDate } from '../../lib/format'
 import { useI18n } from '../../lib/i18n'
 import { fmtMoney, r2 } from '../../lib/money'
+import { usePaged } from '../../lib/paging'
 import { loadParties } from '../../lib/parties'
 import { supabase } from '../../lib/supabase'
 import { amountOf, loadFacilities, type Facility, type FacilityEntry, type FacilitySummary } from './money'
@@ -84,6 +86,7 @@ function FacilityCard({
   const { toast, confirm } = useFeedback()
   const { data: accounts } = useAccounts()
   const [open, setOpen] = useState(false)
+  const pg = usePaged(entries, 'bank-facility-history', [f.id])
   const finance = f.kind === 'finance'
   const used = finance ? sum.owed : Math.max(sum.guarantee_used ?? 0, 0)
   const ratio = f.limit_amount > 0 ? used / f.limit_amount : 0
@@ -181,7 +184,7 @@ function FacilityCard({
         {open && (
           entries.length === 0 ? <div className="px-4 pb-4 text-sm text-stone-500">{t('bankNoHistory')}</div> : (
             <ul className="divide-y divide-stone-100 border-t border-stone-100">
-              {entries.map((e) => (
+              {pg.items.map((e) => (
                 <li key={e.id} className="flex items-start gap-3 px-4 py-2.5 text-sm">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-1.5">
@@ -204,6 +207,7 @@ function FacilityCard({
             </ul>
           )
         )}
+        {open && <Pagination pg={pg} />}
       </div>
     </Card>
   )
@@ -213,7 +217,7 @@ function FacilityForm({
   open, facility, hasEntries, onClose, onSaved,
 }: { open: boolean; facility: Facility | null; hasEntries: boolean; onClose: () => void; onSaved: () => void }) {
   const { t } = useI18n()
-  const { org, version } = useOrg()
+  const { org } = useOrg()
   const { toast, confirm } = useFeedback()
   const { data: accounts } = useAccounts()
   const [kind, setKind] = useState<'finance' | 'guarantee'>('finance')
@@ -229,7 +233,7 @@ function FacilityForm({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [last, setLast] = useState<{ open: boolean; id: string | null }>({ open: false, id: null })
-  const suppliers = useLoad(() => (open ? loadParties(org.id, 'supplier') : Promise.resolve([])), [org.id, open, version])
+  const choices = useCompanyChoices(open)
 
   if (last.open !== open || last.id !== (facility?.id ?? null)) {
     setLast({ open, id: facility?.id ?? null })
@@ -262,6 +266,14 @@ function FacilityForm({
       is_active: active, note: note.trim() || null,
     }
     setBusy(true)
+    if (kind === 'guarantee' && party.startsWith('co:')) {
+      try {
+        row.party_id = await choices.resolve(party)
+      } catch (e) {
+        setBusy(false)
+        return setError(errText(e, t))
+      }
+    }
     const { error } = facility
       ? await supabase.from('bank_facilities').update(row).eq('id', facility.id).eq('org_id', org.id)
       : await supabase.from('bank_facilities').insert({ ...row, org_id: org.id })
@@ -310,7 +322,8 @@ function FacilityForm({
           <Field label={t('bankGuaranteeFor')} required>
             <Select searchable value={party} onChange={(e) => setParty(e.target.value)}>
               <option value="">{t('bankChoose')}</option>
-              {(suppliers.data ?? []).filter((p) => p.is_active || p.id === party).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              {(choices.data?.suppliers ?? []).filter((p) => p.is_active || p.id === party).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              {(choices.data?.companies ?? []).map((c) => <option key={c.id} value={`co:${c.id}`}>{c.name}</option>)}
             </Select>
           </Field>
         )}
@@ -343,7 +356,7 @@ function FacilityForm({
 /** The bank paid a company for you (finance), or the company encashed the guarantee */
 function DrawdownModal({ facility, onClose, onSaved }: { facility: Facility | null; onClose: () => void; onSaved: () => void }) {
   const { t, lang } = useI18n()
-  const { org, today, version } = useOrg()
+  const { org, today } = useOrg()
   const { confirm } = useFeedback()
   const [party, setParty] = useState('')
   const [amount, setAmount] = useState('')
@@ -354,7 +367,8 @@ function DrawdownModal({ facility, onClose, onSaved }: { facility: Facility | nu
   const [last, setLast] = useState<string | null>(null)
   const [filled, setFilled] = useState(false)
   const open = !!facility
-  const suppliers = useLoad(() => (open ? loadParties(org.id, 'supplier') : Promise.resolve([])), [org.id, open, version])
+  const choices = useCompanyChoices(open)
+  const suppliers = { data: choices.data?.suppliers, loading: choices.loading }
   const list = (suppliers.data ?? []).filter((p) => p.is_active || p.id === party).sort((a, b) => b.balance - a.balance || a.name.localeCompare(b.name))
   const payable = (id: string) => Math.max(suppliers.data?.find((p) => p.id === id)?.balance ?? 0, 0)
 
@@ -388,11 +402,18 @@ function DrawdownModal({ facility, onClose, onSaved }: { facility: Facility | nu
     if (!party) return setError(t('bankPickCompany'))
     if (!(n > 0)) return setError(t('errInvalidAmount'))
     if (date > today) return setError(t('errInvalidDate'))
-    const name = suppliers.data?.find((p) => p.id === party)?.name ?? ''
+    const name = choices.nameOf(party)
     if (!(await confirm(t('bankDrawdownConfirm', { bank: facility.bank_name, amount: fmtMoney(n, lang), name }), false))) return
     setBusy(true)
+    let partyId = party
+    try {
+      partyId = await choices.resolve(party)
+    } catch (e) {
+      setBusy(false)
+      return setError(errText(e, t))
+    }
     const { error } = await supabase.rpc('facility_drawdown', {
-      p_org: org.id, p_facility: facility.id, p_date: date, p_amount: r2(n), p_party: party, p_note: note.trim() || null,
+      p_org: org.id, p_facility: facility.id, p_date: date, p_amount: r2(n), p_party: partyId, p_note: note.trim() || null,
     })
     setBusy(false)
     if (error) return setError(errText(error, t))
@@ -422,9 +443,13 @@ function DrawdownModal({ facility, onClose, onSaved }: { facility: Facility | nu
                   {p.name}{p.balance > 0 ? ` · ${t('youOwe')} ${fmtMoney(p.balance, lang)}` : ''}
                 </option>
               ))}
+              {(choices.data?.companies ?? []).map((c) => <option key={c.id} value={`co:${c.id}`}>{c.name}</option>)}
             </Select>
           </Field>
-          {party && (
+          {party.startsWith('co:') && (
+            <p className="rounded-lg bg-sky-100 px-3 py-2 text-xs text-sky-800">{t('bankNewKhataHint', { name: choices.nameOf(party) })}</p>
+          )}
+          {party && !party.startsWith('co:') && (
             <div className="rounded-lg bg-stone-50 px-3 py-2 text-sm ring-1 ring-inset ring-stone-200">
               {t('bankYouOweCompany')}: <b className="num">{fmtMoney(payable(party), lang)}</b>
             </div>
@@ -541,4 +566,34 @@ function RepayModal({ facility, owed, onClose, onSaved }: { facility: Facility |
       )}
     </Modal>
   )
+}
+
+/**
+ * Companies to choose from: the supplier khata accounts, plus the product companies
+ * (DJC, Bayer, Starco...) that have no khata account yet (value 'co:<company id>').
+ */
+function useCompanyChoices(open: boolean) {
+  const { org, version } = useOrg()
+  const res = useLoad(async () => {
+    if (!open) return { suppliers: [] as Awaited<ReturnType<typeof loadParties>>, companies: [] as { id: string; name: string }[] }
+    const [suppliers, co] = await Promise.all([
+      loadParties(org.id, 'supplier'),
+      supabase.from('companies').select('id, name').eq('org_id', org.id).order('name'),
+    ])
+    const have = new Set(suppliers.map((x) => x.name.trim().toLowerCase()))
+    const companies = ((co.data ?? []) as { id: string; name: string }[]).filter((c) => !have.has(c.name.trim().toLowerCase()))
+    return { suppliers, companies }
+  }, [org.id, open, version])
+  const nameOf = (value: string) =>
+    value.startsWith('co:')
+      ? res.data?.companies.find((c) => `co:${c.id}` === value)?.name ?? ''
+      : res.data?.suppliers.find((x) => x.id === value)?.name ?? ''
+  /** the khata account for a choice (a company gets one the first time it is used) */
+  const resolve = async (value: string): Promise<string> => {
+    if (!value.startsWith('co:')) return value
+    const { data, error } = await supabase.from('parties').insert({ org_id: org.id, kind: 'supplier', name: nameOf(value) }).select('id').single()
+    if (error) throw error
+    return data.id as string
+  }
+  return { ...res, nameOf, resolve }
 }

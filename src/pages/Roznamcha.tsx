@@ -3,6 +3,7 @@ import { useState, type ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { AccountPicker } from '../components/AccountPicker'
 import { PrintHeader, ReportButtons } from '../components/domain'
+import { Pagination } from '../components/Pagination'
 import { ReceiptModal } from '../components/Receipt'
 import { Badge, Button, Card, Empty, ErrorBox, Field, Input, Loading, Modal, PageHeader, Tabs, useFeedback } from '../components/ui'
 import { useAccounts, type MoneyAccount } from '../lib/accounts'
@@ -14,7 +15,9 @@ import { errText } from '../lib/errors'
 import { addDays, fmtDate, fmtMonth, monthOf, monthRange, weekday } from '../lib/format'
 import { useI18n } from '../lib/i18n'
 import { fmtMoney } from '../lib/money'
+import { usePaged } from '../lib/paging'
 import { supabase } from '../lib/supabase'
+import { applyChange } from '../lib/offline/sync'
 import type { CashDay, CashKind } from '../lib/types'
 import { CASH_SELECT, canDeleteCash, cashType, describeCash, loadCashItems, loadTransferPeers, type CashEntryFull, type PayMethod } from '../lib/cashDetail'
 
@@ -95,6 +98,7 @@ function DayView({ book }: { book: Book }) {
     const [items, peers] = await Promise.all([loadCashItems(entries), loadTransferPeers(entries)])
     return { sum: (sum.data as CashDay[])[0], entries, items, peers }
   }, [org.id, day, version, book.id])
+  const pg = usePaged(data?.entries ?? [], 'roznamchaDay', [day, book.id])
 
   const ctx = { peers: data?.peers ?? new Map<string, string | null>(), accountName }
   const describe = (e: CashEntryFull) => describeCash(e, data?.items ?? new Map(), t, lang, pick, ctx)
@@ -149,65 +153,68 @@ function DayView({ book }: { book: Book }) {
           </div>
           <Card className="print-plain">
             {data.entries.length === 0 ? <Empty>{t('noCashEntries')}</Empty> : (
-              <div className="table-wrap">
-                <table className="tbl">
-                  <thead>
-                    <tr>
-                      <th>{t('type')}</th>
-                      <th>{t('party')}</th>
-                      <th>{t('detail')}</th>
-                      <th className="r">{L.in}</th>
-                      <th className="r">{L.out}</th>
-                      <th>{t('by')}</th>
-                      {isAdmin && <th className="no-print" />}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.entries.map((e) => {
-                      const x = describe(e)
-                      const type = cashType(e, t)
-                      const open = e.sale_id ? () => setReceipt(e.sale_id!)
-                        : e.cheque_id ? () => nav('/bank?tab=cheques')
-                          : e.facility_id ? () => nav('/bank?tab=finance')
-                            : (e as { investor_id?: string | null }).investor_id && isAdmin ? () => nav(`/investors/${(e as { investor_id?: string | null }).investor_id}`)
-                            : e.party_id ? () => nav(`/khata/${e.party_id}`)
-                              : undefined
-                      // method badge only when it differs from the book (e.g. a cheque in a bank account)
-                      const usual: PayMethod = book.account?.kind ?? 'cash'
-                      return (
-                      <tr key={e.id} className={cx(open && 'cursor-pointer')} onClick={open}>
-                        <td>
-                          <div className="flex flex-wrap gap-1">
-                            <Badge tone={type.tone}>{type.label}</Badge>
-                            {e.method && e.method !== usual && <Badge tone="stone">{t(`bankM_${e.method}`)}</Badge>}
-                          </div>
-                        </td>
-                        <td className="font-medium">{x.party}</td>
-                        <td className="max-w-md text-stone-600">{x.detail}</td>
-                        <td className="r num font-medium text-brand-700">{e.amount > 0 ? fmtMoney(e.amount, lang) : ''}</td>
-                        <td className="r num font-medium text-red-700">{e.amount < 0 ? fmtMoney(-e.amount, lang) : ''}</td>
-                        <td className="text-stone-500">{e.created_by_name}</td>
-                        {isAdmin && (
-                          <td className="no-print r" onClick={(ev) => ev.stopPropagation()}>
-                            {canDeleteCash(e) && (
-                              <Button size="sm" variant="ghost" onClick={() => del(e)} aria-label={t('delete')}><Trash2 className="size-4 text-red-600" /></Button>
-                            )}
-                          </td>
-                        )}
+              <>
+                <div className="table-wrap">
+                  <table className="tbl">
+                    <thead>
+                      <tr>
+                        <th>{t('type')}</th>
+                        <th>{t('party')}</th>
+                        <th>{t('detail')}</th>
+                        <th className="r">{L.in}</th>
+                        <th className="r">{L.out}</th>
+                        <th>{t('by')}</th>
+                        {isAdmin && <th className="no-print" />}
                       </tr>
-                      )
-                    })}
-                  </tbody>
-                  <tfoot>
-                    <tr>
-                      <td colSpan={3}>{t('total')}</td>
-                      <td className="r num">{fmtMoney(data.sum?.cash_in ?? 0, lang)}</td>
-                      <td className="r num">{fmtMoney(data.sum?.cash_out ?? 0, lang)}</td>
-                      <td colSpan={isAdmin ? 2 : 1} />
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {pg.items.map((e) => {
+                        const x = describe(e)
+                        const type = cashType(e, t)
+                        const open = e.sale_id ? () => setReceipt(e.sale_id!)
+                          : e.cheque_id ? () => nav('/bank?tab=cheques')
+                            : e.facility_id ? () => nav('/bank?tab=finance')
+                              : (e as { investor_id?: string | null }).investor_id && isAdmin ? () => nav(`/investors/${(e as { investor_id?: string | null }).investor_id}`)
+                              : e.party_id ? () => nav(`/khata/${e.party_id}`)
+                                : undefined
+                        // method badge only when it differs from the book (e.g. a cheque in a bank account)
+                        const usual: PayMethod = book.account?.kind ?? 'cash'
+                        return (
+                        <tr key={e.id} className={cx(open && 'cursor-pointer')} onClick={open}>
+                          <td>
+                            <div className="flex flex-wrap gap-1">
+                              <Badge tone={type.tone}>{type.label}</Badge>
+                              {e.method && e.method !== usual && <Badge tone="stone">{t(`bankM_${e.method}`)}</Badge>}
+                            </div>
+                          </td>
+                          <td className="font-medium">{x.party}</td>
+                          <td className="max-w-md text-stone-600">{x.detail}</td>
+                          <td className="r num font-medium text-brand-700">{e.amount > 0 ? fmtMoney(e.amount, lang) : ''}</td>
+                          <td className="r num font-medium text-red-700">{e.amount < 0 ? fmtMoney(-e.amount, lang) : ''}</td>
+                          <td className="text-stone-500">{e.created_by_name}</td>
+                          {isAdmin && (
+                            <td className="no-print r" onClick={(ev) => ev.stopPropagation()}>
+                              {canDeleteCash(e) && (
+                                <Button size="sm" variant="ghost" onClick={() => del(e)} aria-label={t('delete')}><Trash2 className="size-4 text-red-600" /></Button>
+                              )}
+                            </td>
+                          )}
+                        </tr>
+                        )
+                      })}
+                    </tbody>
+                    <tfoot>
+                      <tr>
+                        <td colSpan={3}>{t('total')}</td>
+                        <td className="r num">{fmtMoney(data.sum?.cash_in ?? 0, lang)}</td>
+                        <td className="r num">{fmtMoney(data.sum?.cash_out ?? 0, lang)}</td>
+                        <td colSpan={isAdmin ? 2 : 1} />
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+                <Pagination pg={pg} />
+              </>
             )}
           </Card>
         </>
@@ -234,6 +241,7 @@ function MonthView({ book, onOpenDay }: { book: Book; onOpenDay: () => void }) {
   const rows = (data ?? []).filter((r) => Number(r.cash_in) || Number(r.cash_out))
   const tin = rows.reduce((s, r) => s + Number(r.cash_in), 0)
   const tout = rows.reduce((s, r) => s + Number(r.cash_out), 0)
+  const pg = usePaged(rows, 'roznamchaMonth', [month, book.id])
   const exportCsv = () => downloadCsv(`roznamcha-${book.id ? `${book.name}-` : ''}${month}`, [t('date'), L.open, L.in, L.out, L.close], rows.map((r) => [r.day, r.opening, r.cash_in, r.cash_out, r.closing]))
 
   return (
@@ -248,39 +256,42 @@ function MonthView({ book, onOpenDay }: { book: Book; onOpenDay: () => void }) {
       {loading && !data ? <Loading /> : error ? <ErrorBox onRetry={reload}>{errText(error, t)}</ErrorBox> : (
         <Card className="print-plain">
           {rows.length === 0 ? <Empty>{t('noData')}</Empty> : (
-            <div className="table-wrap">
-              <table className="tbl">
-                <thead>
-                  <tr>
-                    <th>{t('date')}</th>
-                    <th className="r">{L.open}</th>
-                    <th className="r">{L.in}</th>
-                    <th className="r">{L.out}</th>
-                    <th className="r">{L.close}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((r) => (
-                    <tr key={r.day} className="cursor-pointer" onClick={() => { dayFromMonth = r.day.slice(0, 10); onOpenDay() }}>
-                      <td className="num whitespace-nowrap">{fmtDate(r.day, lang)} <span className="text-xs text-stone-400">{weekday(r.day, lang)}</span></td>
-                      <td className="r num">{fmtMoney(r.opening, lang)}</td>
-                      <td className="r num text-brand-700">{fmtMoney(r.cash_in, lang)}</td>
-                      <td className="r num text-red-700">{fmtMoney(r.cash_out, lang)}</td>
-                      <td className="r num font-semibold">{fmtMoney(r.closing, lang)}</td>
+            <>
+              <div className="table-wrap">
+                <table className="tbl">
+                  <thead>
+                    <tr>
+                      <th>{t('date')}</th>
+                      <th className="r">{L.open}</th>
+                      <th className="r">{L.in}</th>
+                      <th className="r">{L.out}</th>
+                      <th className="r">{L.close}</th>
                     </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr>
-                    <td>{t('total')}</td>
-                    <td className="r num">{fmtMoney(rows[0]?.opening ?? 0, lang)}</td>
-                    <td className="r num">{fmtMoney(tin, lang)}</td>
-                    <td className="r num">{fmtMoney(tout, lang)}</td>
-                    <td className="r num">{fmtMoney(rows.at(-1)?.closing ?? 0, lang)}</td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {pg.items.map((r) => (
+                      <tr key={r.day} className="cursor-pointer" onClick={() => { dayFromMonth = r.day.slice(0, 10); onOpenDay() }}>
+                        <td className="num whitespace-nowrap">{fmtDate(r.day, lang)} <span className="text-xs text-stone-400">{weekday(r.day, lang)}</span></td>
+                        <td className="r num">{fmtMoney(r.opening, lang)}</td>
+                        <td className="r num text-brand-700">{fmtMoney(r.cash_in, lang)}</td>
+                        <td className="r num text-red-700">{fmtMoney(r.cash_out, lang)}</td>
+                        <td className="r num font-semibold">{fmtMoney(r.closing, lang)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td>{t('total')}</td>
+                      <td className="r num">{fmtMoney(rows[0]?.opening ?? 0, lang)}</td>
+                      <td className="r num">{fmtMoney(tin, lang)}</td>
+                      <td className="r num">{fmtMoney(tout, lang)}</td>
+                      <td className="r num">{fmtMoney(rows.at(-1)?.closing ?? 0, lang)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+              <Pagination pg={pg} />
+            </>
           )}
         </Card>
       )}
@@ -298,7 +309,7 @@ function Tile({ label, value, icon, tone, strong }: { label: string; value: stri
 }
 
 function CashEntryModal({ kind, book, onClose, onSaved }: { kind: CashKind | null; book: Book; onClose: () => void; onSaved: () => void }) {
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
   const { org, today } = useOrg()
   const { data: accounts } = useAccounts()
   const [account, setAccount] = useState('')
@@ -319,6 +330,7 @@ function CashEntryModal({ kind, book, onClose, onSaved }: { kind: CashKind | nul
       setAccount(book.account?.is_active ? book.id : '')
     }
   }
+  const { toast: toastOffline } = useFeedback()
   const save = async () => {
     if (!kind) return
     setError('')
@@ -327,12 +339,25 @@ function CashEntryModal({ kind, book, onClose, onSaved }: { kind: CashKind | nul
     if (date > today) return setError(t('errInvalidDate'))
     setBusy(true)
     const acc = account ? accounts?.find((a) => a.id === account) : null
-    const { error } = await supabase.from('cash_entries').insert({
-      org_id: org.id, entry_date: date, kind, amount: kind === 'cash_in' ? n : -n, note: note.trim() || null,
-      account_id: acc?.id ?? null, method: acc?.kind ?? 'cash',
-    })
+    try {
+      // saved now, or kept on this device without internet (sent once later)
+      const res = await applyChange(org.id, 'add_cash_entry', { p_date: date, p_kind: kind, p_amount: n, p_note: note.trim() || null, p_account: acc?.id ?? null },
+        [t(`ck_${kind}`), fmtMoney(n, lang), note.trim()].filter(Boolean).join(' · '))
+      if (res.status === 'queued') toastOffline(t('offSavedOffline'))
+    } catch (e) {
+      // before migration 019 there is no add_cash_entry: save the line directly (online)
+      if (/add_cash_entry|schema cache|PGRST202/.test(String((e as Error)?.message ?? ''))) {
+        const { error } = await supabase.from('cash_entries').insert({
+          org_id: org.id, entry_date: date, kind, amount: kind === 'cash_in' ? n : -n, note: note.trim() || null,
+          account_id: acc?.id ?? null, method: acc?.kind ?? 'cash',
+        })
+        if (error) { setBusy(false); return setError(errText(error, t)) }
+      } else {
+        setBusy(false)
+        return setError(errText(e, t))
+      }
+    }
     setBusy(false)
-    if (error) return setError(errText(error, t))
     onSaved()
   }
   const hint = kind === 'expense' ? t('expenseHint') : kind === 'cash_in' ? t('cashInHint') : t('cashOutHint')

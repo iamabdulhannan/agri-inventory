@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { PrintHeader, ReportButtons } from '../components/domain'
 import { ReceiptModal } from '../components/Receipt'
 import { CorrectRates } from '../components/CorrectRates'
+import { Pagination } from '../components/Pagination'
 import { Badge, Button, Card, Empty, ErrorBox, Field, Input, Loading, PageHeader, Tabs, useFeedback } from '../components/ui'
 import { useOrg } from '../lib/app'
 import { downloadCsv } from '../lib/csv'
@@ -13,6 +14,7 @@ import { fmtDate, monthOf, monthRange } from '../lib/format'
 import { useI18n } from '../lib/i18n'
 import { daysLeft } from '../lib/due'
 import { fmtMoney, r2 } from '../lib/money'
+import { usePaged } from '../lib/paging'
 import { supabase } from '../lib/supabase'
 import type { Purchase, Sale } from '../lib/types'
 
@@ -65,6 +67,8 @@ export function Sales() {
     [data, q],
   )
   const rows = tab === 'sales' ? sales : purchases
+  const salesPg = usePaged(sales, 'invoices', [tab, from, to, q])
+  const purchasesPg = usePaged(purchases, 'purchases', [tab, from, to, q])
   const sum = rows.reduce(
     (a, r) => ({ total: a.total + Number(r.total), paid: a.paid + Number(r.paid), adv: a.adv + (Number((r as SaleRow).advance_used) || 0) }),
     { total: 0, paid: 0, adv: 0 },
@@ -120,97 +124,100 @@ export function Sales() {
       {loading && !data ? <Loading /> : error ? <ErrorBox onRetry={reload}>{errText(error, t)}</ErrorBox> : (
         <Card className="print-plain">
           {rows.length === 0 ? <Empty>{t('noEntries')}</Empty> : (
-            <div className="table-wrap">
-              <table className="tbl">
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>{t('date')}</th>
-                    <th>{tab === 'sales' ? t('customer') : t('supplier')}</th>
-                    <th className="r">{t('grandTotal')}</th>
-                    <th className="r">{tab === 'sales' ? t('received') : t('paidCol')}</th>
-                    <th className="r">{t('balanceDue')}</th>
-                    <th>{t('by')}</th>
-                    <th className="no-print" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {tab === 'sales'
-                    ? sales.map((s) => {
-                        const due = saleDue(s)
-                        const adv = Number(s.advance_used) || 0
-                        return (
-                          <tr key={s.id} className="cursor-pointer" onClick={() => setReceipt(s.id)}>
-                            <td className="num font-semibold">{s.invoice_no}</td>
-                            <td className="num whitespace-nowrap">{fmtDate(s.sale_date, lang)}</td>
-                            <td>
-                              {s.party_id ? (
-                                <button className="font-medium text-brand-700 hover:underline cursor-pointer" onClick={(e) => { e.stopPropagation(); nav(`/khata/${s.party_id}`) }}>{s.parties?.name}</button>
-                              ) : (
-                                <span className="text-stone-600">{s.customer_name || t('walkIn')}</span>
-                              )}
-                              {Number(s.discount) > 0 && <div className="num text-xs text-stone-500">{t('discount')}: {fmtMoney(s.discount, lang)}</div>}
-                              {Number(s.markup) > 0 && <div className="num text-xs text-stone-500">{t('saleMarkup')}: + {fmtMoney(s.markup, lang)}</div>}
-                            </td>
-                            <td className="r num font-semibold">{fmtMoney(s.total, lang)}</td>
-                            <td className="r num text-brand-700">
-                              {fmtMoney(s.paid, lang)}
-                              {adv > 0 && <div className="text-xs font-normal text-stone-500" title={t('salePaidFromAdvance')}>+ {fmtMoney(adv, lang)} {t('advance')}</div>}
-                            </td>
-                            <td className="r">
-                              {due > 0 ? <Badge tone="amber">{fmtMoney(due, lang)}</Badge> : <span className="text-stone-300">—</span>}
-                              {dueBadge(s) && <div className="mt-1">{dueBadge(s)}</div>}
-                            </td>
-                            <td className="text-stone-500">{s.created_by_name}</td>
-                            <td className="no-print r whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                              <Button size="sm" variant="ghost" onClick={() => setReceipt(s.id)} aria-label={t('printReceipt')} title={t('printReceipt')}><Printer className="size-4" /></Button>
-                              <Button size="sm" variant="ghost" onClick={() => nav(`/stock-in?type=return_in&invoice=${s.invoice_no}`)} aria-label={t('mv_return_in')} title={t('mv_return_in')}><Undo2 className="size-4" /></Button>
-                              {isAdmin && <Button size="sm" variant="ghost" onClick={() => setCorrecting(s.id)} aria-label={t('crAction')} title={t('crAction')}><PenLine className="size-4" /></Button>}
-                              {isAdmin && <Button size="sm" variant="ghost" onClick={() => voidSale(s)} aria-label={t('voidDoc')} title={t('voidDoc')}><Trash2 className="size-4 text-red-600" /></Button>}
-                            </td>
-                          </tr>
-                        )
-                      })
-                    : purchases.map((p) => {
-                        const due = Number(p.total) - Number(p.paid)
-                        return (
-                          <tr key={p.id}>
-                            <td className="num font-semibold">{p.purchase_no}</td>
-                            <td className="num whitespace-nowrap">{fmtDate(p.purchase_date, lang)}</td>
-                            <td>
-                              {p.party_id ? (
-                                <button className="font-medium text-brand-700 hover:underline cursor-pointer" onClick={() => nav(`/khata/${p.party_id}`)}>{p.parties?.name}</button>
-                              ) : (
-                                <span className="text-stone-600">{p.supplier_name || '—'}</span>
-                              )}
-                              {p.reference && <div className="num text-xs text-stone-500">{t('reference')}: {p.reference}</div>}
-                            </td>
-                            <td className="r num font-semibold">{fmtMoney(p.total, lang)}</td>
-                            <td className="r num text-brand-700">{fmtMoney(p.paid, lang)}</td>
-                            <td className="r">{due > 0 ? <Badge tone="red">{fmtMoney(due, lang)}</Badge> : <span className="text-stone-300">—</span>}</td>
-                            <td className="text-stone-500">{p.created_by_name}</td>
-                            <td className="no-print r whitespace-nowrap">
-                              {isAdmin && <Button size="sm" variant="ghost" onClick={() => nav(`/stock-in?edit=${p.id}`)} aria-label={t('edit')} title={t('edit')}><Pencil className="size-4" /></Button>}
-                              {isAdmin && <Button size="sm" variant="ghost" onClick={() => voidPurchase(p)} aria-label={t('voidDoc')} title={t('voidDoc')}><Trash2 className="size-4 text-red-600" /></Button>}
-                            </td>
-                          </tr>
-                        )
-                      })}
-                </tbody>
-                <tfoot>
-                  <tr>
-                    <td colSpan={3}>{t('total')} ({rows.length})</td>
-                    <td className="r num">{fmtMoney(sum.total, lang)}</td>
-                    <td className="r num">
-                      {fmtMoney(sum.paid, lang)}
-                      {sum.adv > 0 && <div className="text-xs font-normal text-stone-500">+ {fmtMoney(sum.adv, lang)} {t('advance')}</div>}
-                    </td>
-                    <td className="r num">{fmtMoney(r2(sum.total - sum.paid - sum.adv), lang)}</td>
-                    <td colSpan={2} />
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
+            <>
+              <div className="table-wrap">
+                <table className="tbl">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>{t('date')}</th>
+                      <th>{tab === 'sales' ? t('customer') : t('supplier')}</th>
+                      <th className="r">{t('grandTotal')}</th>
+                      <th className="r">{tab === 'sales' ? t('received') : t('paidCol')}</th>
+                      <th className="r">{t('balanceDue')}</th>
+                      <th>{t('by')}</th>
+                      <th className="no-print" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tab === 'sales'
+                      ? salesPg.items.map((s) => {
+                          const due = saleDue(s)
+                          const adv = Number(s.advance_used) || 0
+                          return (
+                            <tr key={s.id} className="cursor-pointer" onClick={() => setReceipt(s.id)}>
+                              <td className="num font-semibold">{s.invoice_no}</td>
+                              <td className="num whitespace-nowrap">{fmtDate(s.sale_date, lang)}</td>
+                              <td>
+                                {s.party_id ? (
+                                  <button className="font-medium text-brand-700 hover:underline cursor-pointer" onClick={(e) => { e.stopPropagation(); nav(`/khata/${s.party_id}`) }}>{s.parties?.name}</button>
+                                ) : (
+                                  <span className="text-stone-600">{s.customer_name || t('walkIn')}</span>
+                                )}
+                                {Number(s.discount) > 0 && <div className="num text-xs text-stone-500">{t('discount')}: {fmtMoney(s.discount, lang)}</div>}
+                                {Number(s.markup) > 0 && <div className="num text-xs text-stone-500">{t('saleMarkup')}: + {fmtMoney(s.markup, lang)}</div>}
+                              </td>
+                              <td className="r num font-semibold">{fmtMoney(s.total, lang)}</td>
+                              <td className="r num text-brand-700">
+                                {fmtMoney(s.paid, lang)}
+                                {adv > 0 && <div className="text-xs font-normal text-stone-500" title={t('salePaidFromAdvance')}>+ {fmtMoney(adv, lang)} {t('advance')}</div>}
+                              </td>
+                              <td className="r">
+                                {due > 0 ? <Badge tone="amber">{fmtMoney(due, lang)}</Badge> : <span className="text-stone-300">—</span>}
+                                {dueBadge(s) && <div className="mt-1">{dueBadge(s)}</div>}
+                              </td>
+                              <td className="text-stone-500">{s.created_by_name}</td>
+                              <td className="no-print r whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                                <Button size="sm" variant="ghost" onClick={() => setReceipt(s.id)} aria-label={t('printReceipt')} title={t('printReceipt')}><Printer className="size-4" /></Button>
+                                <Button size="sm" variant="ghost" onClick={() => nav(`/stock-in?type=return_in&invoice=${s.invoice_no}`)} aria-label={t('mv_return_in')} title={t('mv_return_in')}><Undo2 className="size-4" /></Button>
+                                {isAdmin && <Button size="sm" variant="ghost" onClick={() => setCorrecting(s.id)} aria-label={t('crAction')} title={t('crAction')}><PenLine className="size-4" /></Button>}
+                                {isAdmin && <Button size="sm" variant="ghost" onClick={() => voidSale(s)} aria-label={t('voidDoc')} title={t('voidDoc')}><Trash2 className="size-4 text-red-600" /></Button>}
+                              </td>
+                            </tr>
+                          )
+                        })
+                      : purchasesPg.items.map((p) => {
+                          const due = Number(p.total) - Number(p.paid)
+                          return (
+                            <tr key={p.id}>
+                              <td className="num font-semibold">{p.purchase_no}</td>
+                              <td className="num whitespace-nowrap">{fmtDate(p.purchase_date, lang)}</td>
+                              <td>
+                                {p.party_id ? (
+                                  <button className="font-medium text-brand-700 hover:underline cursor-pointer" onClick={() => nav(`/khata/${p.party_id}`)}>{p.parties?.name}</button>
+                                ) : (
+                                  <span className="text-stone-600">{p.supplier_name || '—'}</span>
+                                )}
+                                {p.reference && <div className="num text-xs text-stone-500">{t('reference')}: {p.reference}</div>}
+                              </td>
+                              <td className="r num font-semibold">{fmtMoney(p.total, lang)}</td>
+                              <td className="r num text-brand-700">{fmtMoney(p.paid, lang)}</td>
+                              <td className="r">{due > 0 ? <Badge tone="red">{fmtMoney(due, lang)}</Badge> : <span className="text-stone-300">—</span>}</td>
+                              <td className="text-stone-500">{p.created_by_name}</td>
+                              <td className="no-print r whitespace-nowrap">
+                                {isAdmin && <Button size="sm" variant="ghost" onClick={() => nav(`/stock-in?edit=${p.id}`)} aria-label={t('edit')} title={t('edit')}><Pencil className="size-4" /></Button>}
+                                {isAdmin && <Button size="sm" variant="ghost" onClick={() => voidPurchase(p)} aria-label={t('voidDoc')} title={t('voidDoc')}><Trash2 className="size-4 text-red-600" /></Button>}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td colSpan={3}>{t('total')} ({rows.length})</td>
+                      <td className="r num">{fmtMoney(sum.total, lang)}</td>
+                      <td className="r num">
+                        {fmtMoney(sum.paid, lang)}
+                        {sum.adv > 0 && <div className="text-xs font-normal text-stone-500">+ {fmtMoney(sum.adv, lang)} {t('advance')}</div>}
+                      </td>
+                      <td className="r num">{fmtMoney(r2(sum.total - sum.paid - sum.adv), lang)}</td>
+                      <td colSpan={2} />
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+              <Pagination pg={tab === 'sales' ? salesPg : purchasesPg} />
+            </>
           )}
         </Card>
       )}

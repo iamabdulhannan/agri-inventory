@@ -2,6 +2,7 @@ import { Ban, CheckCircle2, Plus, RotateCcw, Trash2, Undo2, XCircle } from 'luci
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { AccountPicker } from '../AccountPicker'
+import { Pagination } from '../Pagination'
 import { PartyPicker } from '../PartyPicker'
 import { Badge, Button, Card, Empty, ErrorBox, Field, Input, Loading, Modal, Segmented, useFeedback } from '../ui'
 import { useAccounts } from '../../lib/accounts'
@@ -12,6 +13,7 @@ import { errText } from '../../lib/errors'
 import { fmtDate } from '../../lib/format'
 import { useI18n } from '../../lib/i18n'
 import { fmtMoney, r2 } from '../../lib/money'
+import { usePaged } from '../../lib/paging'
 import { loadParties } from '../../lib/parties'
 import { supabase } from '../../lib/supabase'
 import type { PartyKind } from '../../lib/types'
@@ -50,6 +52,7 @@ export function ChequesTab() {
     )
   }, [data, dir, status])
   const listTotal = sum(list)
+  const pg = usePaged(list, 'bank-cheques', [dir, status])
 
   const setStatusOf = async (c: Cheque, s: ChequeStatus) => {
     const msg =
@@ -119,7 +122,7 @@ export function ChequesTab() {
           ) : (
             <>
               <ul className="divide-y divide-stone-100">
-                {list.map((c) => (
+                {pg.items.map((c) => (
                   <li key={c.id} className="px-4 py-3">
                     <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
                       <div className="min-w-0">
@@ -179,6 +182,7 @@ export function ChequesTab() {
                 <span>{t('total')} ({list.length})</span>
                 <span className="num text-lg">{fmtMoney(listTotal, lang)}</span>
               </div>
+              <Pagination pg={pg} />
             </>
           )}
         </Card>

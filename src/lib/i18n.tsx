@@ -4,11 +4,12 @@ import { bankEn, bankUr } from './i18n-parts/bank'
 import { khataEn, khataUr } from './i18n-parts/khata'
 import { saleEn, saleUr } from './i18n-parts/sale'
 import { investEn, investUr } from './i18n-parts/invest'
+import { offlineEn, offlineUr } from './i18n-parts/offline'
 
 export type Lang = 'en' | 'ur'
 
 const en = {
-  ...bankEn, ...saleEn, ...khataEn, ...investEn,
+  ...bankEn, ...saleEn, ...khataEn, ...investEn, ...offlineEn,
   appName: 'Agri Inventory',
   tagline: 'Stock & expiry control for pesticides, fertilizers and seeds',
 
@@ -164,6 +165,7 @@ const en = {
   duesTodayCount: '{n} to pay today ({amount})', duesLateCount: '{n} late ({amount})', duesToday: 'Today', duesDaysLate: '{n} days late',
   repSoldAt: 'Sold at (avg)', repSales: 'Sales', repCost: 'Cost', repCostShort: 'cost', repProfit: 'Profit / loss', repLoss: 'Loss', repMoneyTotal: 'Sales and profit',
   receiptNote: 'Note on receipts (Urdu)', receiptNoteHint: 'Printed at the bottom of every receipt. Leave empty to use the standard note.',
+  pgShowing: 'Showing {from}–{to} of {total}', pgPages: 'Pages', pgPrev: 'Previous page', pgNext: 'Next page', pgPerPage: 'Rows per page', pgSize: '{n} per page',
   navAudit: 'Audit', auditAdminOnly: 'Only the owner or an admin can open Audit.',
   errPeriodLocked: 'This date is in a locked year. Entries up to the lock date cannot be added, changed or deleted. The owner can unlock it in Audit.',
   auditTitle: 'Audit & year end',
@@ -340,7 +342,7 @@ const en = {
 export type TKey = keyof typeof en
 
 const ur: Record<TKey, string> = {
-  ...bankUr, ...saleUr, ...khataUr, ...investUr,
+  ...bankUr, ...saleUr, ...khataUr, ...investUr, ...offlineUr,
   appName: 'زرعی انوینٹری',
   tagline: 'زرعی ادویات، کھاد اور بیج کا اسٹاک اور ایکسپائری کنٹرول',
 
@@ -482,6 +484,7 @@ const ur: Record<TKey, string> = {
   duesTodayCount: 'آج {n} کی ادائیگی ({amount})', duesLateCount: '{n} کی تاریخ گزر گئی ({amount})', duesToday: 'آج', duesDaysLate: '{n} دن لیٹ',
   repSoldAt: 'فروخت ریٹ (اوسط)', repSales: 'فروخت', repCost: 'لاگت', repCostShort: 'لاگت', repProfit: 'نفع / نقصان', repLoss: 'نقصان', repMoneyTotal: 'فروخت اور منافع',
   receiptNote: 'رسید پر نوٹ (اردو)', receiptNoteHint: 'ہر رسید کے آخر میں چھپے گا۔ خالی چھوڑیں تو معیاری نوٹ چھپے گا۔',
+  pgShowing: '{total} میں سے {from}–{to}', pgPages: 'صفحات', pgPrev: 'پچھلا صفحہ', pgNext: 'اگلا صفحہ', pgPerPage: 'فی صفحہ قطاریں', pgSize: '{n} فی صفحہ',
   navAudit: 'آڈٹ', auditAdminOnly: 'آڈٹ صرف مالک یا ایڈمن کھول سکتا ہے۔',
   errPeriodLocked: 'یہ تاریخ بند (لاک) سال میں ہے۔ لاک کی تاریخ تک کوئی اندراج شامل، تبدیل یا حذف نہیں ہو سکتا۔ مالک آڈٹ میں جا کر اسے کھول سکتا ہے۔',
   auditTitle: 'آڈٹ اور سال کا اختتام',

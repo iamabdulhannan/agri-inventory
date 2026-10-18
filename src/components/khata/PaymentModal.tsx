@@ -6,7 +6,7 @@ import { useOrg } from '../../lib/app'
 import { errText } from '../../lib/errors'
 import { useI18n } from '../../lib/i18n'
 import { fmtMoney } from '../../lib/money'
-import { supabase } from '../../lib/supabase'
+import { applyChange } from '../../lib/offline/sync'
 import type { PartyBalance } from '../../lib/types'
 import { AccountPicker } from '../AccountPicker'
 import { Button, ErrorBox, Field, Input, Modal, Segmented, Select } from '../ui'
@@ -59,20 +59,28 @@ export function PaymentModal({
     setError('')
     if (!(Number(amount) > 0)) return setError(t('errInvalidAmount'))
     setBusy(true)
+    // saved now, or kept on this device without internet (sent once later)
+    const run = async (fn: 'record_party_payment' | 'record_cheque', args: Record<string, unknown>, label: string, okMsg: string) => {
+      try {
+        const res = await applyChange(org.id, fn, args, label)
+        setBusy(false)
+        onSaved(res.status === 'queued' ? t('offSavedOffline') : okMsg)
+      } catch (e) {
+        setBusy(false)
+        setError(errText(e, t))
+      }
+    }
+    const label = `${party.name} · ${fmtMoney(Number(amount), lang)}`
     if (mode === 'money') {
-      const { error } = await supabase.rpc('record_party_payment', {
-        p_org: org.id, p_party: party.id, p_date: date, p_amount: Number(amount), p_note: note || null, p_account: account || null,
-      })
-      setBusy(false)
-      if (error) return setError(errText(error, t))
-      return onSaved(t('paymentSaved'))
+      return run('record_party_payment', {
+        p_party: party.id, p_date: date, p_amount: Number(amount), p_note: note || null, p_account: account || null,
+      }, label, t('paymentSaved'))
     }
     if (!isCustomer && !chequeAccount) {
       setBusy(false)
       return setError(t('khChequeNeedsBank'))
     }
-    const { error } = await supabase.rpc('record_cheque', {
-      p_org: org.id,
+    return run('record_cheque', {
       p_direction: isCustomer ? 'received' : 'issued',
       p_party: party.id,
       p_amount: Number(amount),
@@ -82,10 +90,7 @@ export function PaymentModal({
       p_received_on: date,
       p_account: chequeAccount || null,
       p_note: note || null,
-    })
-    setBusy(false)
-    if (error) return setError(errText(error, t))
-    onSaved(t('khChequeSaved'))
+    }, `${label}${chequeNo ? ` · #${chequeNo}` : ''}`, t('khChequeSaved'))
   }
 
   return (

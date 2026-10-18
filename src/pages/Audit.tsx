@@ -1,6 +1,7 @@
 import { Lock, LockOpen, ShieldCheck } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
 import { PrintHeader, ReportButtons } from '../components/domain'
+import { Pagination } from '../components/Pagination'
 import { Badge, Button, Card, Empty, ErrorBox, Field, Input, Loading, PageHeader, Select, Tabs, useFeedback } from '../components/ui'
 import { useOrg } from '../lib/app'
 import { loadCatalog } from '../lib/catalog'
@@ -11,6 +12,7 @@ import { errText } from '../lib/errors'
 import { addDays, fmtDate, fmtDateTime } from '../lib/format'
 import { useI18n, type TKey } from '../lib/i18n'
 import { fmtMoney } from '../lib/money'
+import { usePaged } from '../lib/paging'
 import { supabase } from '../lib/supabase'
 import type { PackUnit } from '../lib/types'
 import { fmtNum, fmtPack } from '../lib/units'
@@ -335,6 +337,15 @@ function SalesRegister({ from, to, period }: PeriodProps) {
     ])
     return { sales, returns }
   }, [org.id, from, to, version])
+  // invoices then returns, as one paged list (totals below stay over everything)
+  const lines = useMemo(
+    () => [
+      ...(data?.sales ?? []).map((x) => ({ kind: 'sale' as const, x })),
+      ...(data?.returns ?? []).map((r) => ({ kind: 'return' as const, r })),
+    ],
+    [data],
+  )
+  const pg = usePaged(lines, 'audit-sales', [from, to])
 
   if (loading && !data) return <Loading />
   if (error) return <ErrorBox onRetry={reload}>{errText(error, t)}</ErrorBox>
@@ -351,7 +362,7 @@ function SalesRegister({ from, to, period }: PeriodProps) {
     ])
 
   return (
-    <RegisterShell title={t('salesRegister')} period={period} onExcel={exportCsv} empty={!data.sales.length && !data.returns.length}>
+    <RegisterShell title={t('salesRegister')} period={period} onExcel={exportCsv} empty={!data.sales.length && !data.returns.length} pager={<Pagination pg={pg} />}>
       <table className="tbl">
         <thead>
           <tr>
@@ -361,29 +372,35 @@ function SalesRegister({ from, to, period }: PeriodProps) {
           </tr>
         </thead>
         <tbody>
-          {data.sales.map((x) => (
-            <tr key={x.id}>
-              <td className="num whitespace-nowrap">{fmtDate(x.sale_date, lang)}</td>
-              <td className="num">INV-{x.invoice_no}</td>
-              <td>{who(x)}</td>
-              <td className="r num">{fmtMoney(x.subtotal, lang)}</td>
-              <td className="r num">{Number(x.discount) ? fmtMoney(x.discount, lang) : ''}</td>
-              <td className="r num font-medium">{fmtMoney(x.total, lang)}</td>
-              <td className="r num">{fmtMoney(x.paid, lang)}</td>
-              <td className="r num">{Number(x.total) - Number(x.paid) > 0 ? fmtMoney(Number(x.total) - Number(x.paid), lang) : ''}</td>
-            </tr>
-          ))}
-          {data.returns.map((r) => (
-            <tr key={r.id} className="text-red-700">
-              <td className="num whitespace-nowrap">{fmtDate(r.return_date, lang)}</td>
-              <td className="num">{t('returnWord')} INV-{r.sales?.invoice_no}</td>
-              <td>{r.parties?.name ?? r.sales?.customer_name ?? t('walkIn')}</td>
-              <td /><td />
-              <td className="r num">−{fmtMoney(r.total, lang)}</td>
-              <td className="r num">{Number(r.refund) ? `−${fmtMoney(r.refund, lang)}` : ''}</td>
-              <td />
-            </tr>
-          ))}
+          {pg.items.map((l) => {
+            if (l.kind === 'sale') {
+              const x = l.x
+              return (
+                <tr key={`s${x.id}`}>
+                  <td className="num whitespace-nowrap">{fmtDate(x.sale_date, lang)}</td>
+                  <td className="num">INV-{x.invoice_no}</td>
+                  <td>{who(x)}</td>
+                  <td className="r num">{fmtMoney(x.subtotal, lang)}</td>
+                  <td className="r num">{Number(x.discount) ? fmtMoney(x.discount, lang) : ''}</td>
+                  <td className="r num font-medium">{fmtMoney(x.total, lang)}</td>
+                  <td className="r num">{fmtMoney(x.paid, lang)}</td>
+                  <td className="r num">{Number(x.total) - Number(x.paid) > 0 ? fmtMoney(Number(x.total) - Number(x.paid), lang) : ''}</td>
+                </tr>
+              )
+            }
+            const r = l.r
+            return (
+              <tr key={`r${r.id}`} className="text-red-700">
+                <td className="num whitespace-nowrap">{fmtDate(r.return_date, lang)}</td>
+                <td className="num">{t('returnWord')} INV-{r.sales?.invoice_no}</td>
+                <td>{r.parties?.name ?? r.sales?.customer_name ?? t('walkIn')}</td>
+                <td /><td />
+                <td className="r num">−{fmtMoney(r.total, lang)}</td>
+                <td className="r num">{Number(r.refund) ? `−${fmtMoney(r.refund, lang)}` : ''}</td>
+                <td />
+              </tr>
+            )
+          })}
         </tbody>
         <tfoot>
           <tr className="font-semibold">
@@ -410,6 +427,7 @@ function PurchaseRegister({ from, to, period }: PeriodProps) {
       .eq('org_id', org.id).gte('purchase_date', from).lte('purchase_date', to).order('purchase_date').order('purchase_no').range(a, b)),
     [org.id, from, to, version],
   )
+  const pg = usePaged(data ?? [], 'audit-purchases', [from, to])
   if (loading && !data) return <Loading />
   if (error) return <ErrorBox onRetry={reload}>{errText(error, t)}</ErrorBox>
   if (!data) return null
@@ -424,7 +442,7 @@ function PurchaseRegister({ from, to, period }: PeriodProps) {
     ])
 
   return (
-    <RegisterShell title={t('purchaseRegister')} period={period} onExcel={exportCsv} empty={!data.length}>
+    <RegisterShell title={t('purchaseRegister')} period={period} onExcel={exportCsv} empty={!data.length} pager={<Pagination pg={pg} />}>
       <table className="tbl">
         <thead>
           <tr>
@@ -433,7 +451,7 @@ function PurchaseRegister({ from, to, period }: PeriodProps) {
           </tr>
         </thead>
         <tbody>
-          {data.map((x) => (
+          {pg.items.map((x) => (
             <tr key={x.id}>
               <td className="num whitespace-nowrap">{fmtDate(x.purchase_date, lang)}</td>
               <td className="num">#{x.purchase_no}</td>
@@ -474,6 +492,7 @@ function StockRegister({ from, to, period }: PeriodProps) {
       .sort((a, b) => a.p!.name.localeCompare(b.p!.name) || a.p!.pack_size - b.p!.pack_size)
     return list
   }, [org.id, from, to, version])
+  const pg = usePaged(data ?? [], 'audit-stock', [from, to])
   if (loading && !data) return <Loading />
   if (error) return <ErrorBox onRetry={reload}>{migrationHint(error, t)}</ErrorBox>
   if (!data) return null
@@ -487,7 +506,7 @@ function StockRegister({ from, to, period }: PeriodProps) {
     ])
 
   return (
-    <RegisterShell title={t('stockRegister')} period={period} onExcel={exportCsv} empty={!data.length} note={t('auditNoteValuation')}>
+    <RegisterShell title={t('stockRegister')} period={period} onExcel={exportCsv} empty={!data.length} note={t('auditNoteValuation')} pager={<Pagination pg={pg} />}>
       <table className="tbl">
         <thead>
           <tr>
@@ -497,7 +516,7 @@ function StockRegister({ from, to, period }: PeriodProps) {
           </tr>
         </thead>
         <tbody>
-          {data.map((r) => (
+          {pg.items.map((r) => (
             <tr key={r.product_id}>
               <td>
                 <div className="font-medium">{pick(r.p!.name, r.p!.name_ur)}</div>
@@ -535,6 +554,7 @@ function ExpensesList({ from, to, period }: PeriodProps) {
       .eq('org_id', org.id).eq('kind', 'expense').gte('entry_date', from).lte('entry_date', to).order('entry_date').range(a, b)),
     [org.id, from, to, version],
   )
+  const pg = usePaged(data ?? [], 'audit-expenses', [from, to])
   if (loading && !data) return <Loading />
   if (error) return <ErrorBox onRetry={reload}>{errText(error, t)}</ErrorBox>
   if (!data) return null
@@ -545,11 +565,11 @@ function ExpensesList({ from, to, period }: PeriodProps) {
       [t('total'), '', total, ''],
     ])
   return (
-    <RegisterShell title={t('expensesList')} period={period} onExcel={exportCsv} empty={!data.length}>
+    <RegisterShell title={t('expensesList')} period={period} onExcel={exportCsv} empty={!data.length} pager={<Pagination pg={pg} />}>
       <table className="tbl">
         <thead><tr><th>{t('date')}</th><th>{t('note')}</th><th className="r">{t('amount')}</th><th>{t('by')}</th></tr></thead>
         <tbody>
-          {data.map((x) => (
+          {pg.items.map((x) => (
             <tr key={x.id}>
               <td className="num whitespace-nowrap">{fmtDate(x.entry_date, lang)}</td>
               <td>{x.note}</td>
@@ -564,7 +584,7 @@ function ExpensesList({ from, to, period }: PeriodProps) {
   )
 }
 
-function RegisterShell({ title, period, onExcel, empty, note, children }: { title: string; period: string; onExcel: () => void; empty: boolean; note?: string; children: ReactNode }) {
+function RegisterShell({ title, period, onExcel, empty, note, pager, children }: { title: string; period: string; onExcel: () => void; empty: boolean; note?: string; pager?: ReactNode; children: ReactNode }) {
   const { t } = useI18n()
   return (
     <div className="space-y-3">
@@ -572,6 +592,7 @@ function RegisterShell({ title, period, onExcel, empty, note, children }: { titl
       <PrintHeader title={title} subtitle={period} />
       <Card className="print-plain">
         {empty ? <Empty>{t('noEntries')}</Empty> : <div className="table-wrap">{children}</div>}
+        {!empty && pager}
       </Card>
       {note && <p className="text-xs text-stone-500">{note}</p>}
     </div>
@@ -611,11 +632,12 @@ function AuditTrail({ from, to, period }: PeriodProps) {
     }
     return { rows, catalog, batches }
   }, [org.id, from, to, version])
+  const rows = useMemo(() => (data?.rows ?? []).filter((r) => !action || r.action === action), [data, action])
+  const pg = usePaged(rows, 'audit-trail', [from, to, action])
 
   if (loading && !data) return <Loading />
   if (error) return <ErrorBox onRetry={reload}>{migrationHint(error, t)}</ErrorBox>
   if (!data) return null
-  const rows = data.rows.filter((r) => !action || r.action === action)
 
   const fmtVal = (v: unknown) => (v == null || v === '' ? '—' : typeof v === 'number' ? fmtNum(v, 3) : String(v))
   /** what the row was: "INV-12", "Purchase #7 · Bill 123", "Bectal 200 ml · Sale -2" */
@@ -670,7 +692,7 @@ function AuditTrail({ from, to, period }: PeriodProps) {
                 <tr><th>{t('when')}</th><th>{t('by')}</th><th>{t('record')}</th><th>{t('details')}</th></tr>
               </thead>
               <tbody>
-                {rows.map((r) => (
+                {pg.items.map((r) => (
                   <tr key={r.id} className="align-top">
                     <td className="num whitespace-nowrap">{fmtDateTime(r.at, lang)}</td>
                     <td>{r.user_name || '—'}</td>
@@ -688,6 +710,7 @@ function AuditTrail({ from, to, period }: PeriodProps) {
             </table>
           </div>
         )}
+        <Pagination pg={pg} />
       </Card>
       <p className="text-xs text-stone-500">{t('auditTrailNote')}</p>
     </div>

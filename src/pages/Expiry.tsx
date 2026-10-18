@@ -64,7 +64,7 @@ export function ExpiryView({ embedded }: { embedded?: boolean }) {
         {rows.length === 0 ? (
           <Empty icon={<CheckCircle2 className="size-10 text-brand-500" />}>{t('noExpiry', { d: view === '30' ? 30 : days })}</Empty>
         ) : (
-          <ExpiryTable rows={rows} />
+          <ExpiryTable rows={rows} pageKey="expiry" reset={[view]} />
         )}
       </Card>
     </div>

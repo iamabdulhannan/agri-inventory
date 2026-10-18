@@ -2,6 +2,7 @@ import { BarChart3, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { PrintHeader, ProductName, ProductPicker, ReportButtons } from '../components/domain'
+import { Pagination } from '../components/Pagination'
 import { usePackLabel } from '../lib/packLabel'
 import { Button, Card, Checkbox, Empty, ErrorBox, Field, Input, Loading, PageHeader, Tabs } from '../components/ui'
 import { cx } from '../lib/cx'
@@ -15,6 +16,7 @@ import { useI18n } from '../lib/i18n'
 import { supabase } from '../lib/supabase'
 import type { ProductSalesRow, ProductStock, RegisterRow, SalesDay, SummaryRow } from '../lib/types'
 import { fmtMoney } from '../lib/money'
+import { usePaged } from '../lib/paging'
 import { baseOf, fmtBase, fmtNum, fmtPack, fmtTotal, measureOf } from '../lib/units'
 import { ExpiryView } from './Expiry'
 
@@ -82,11 +84,19 @@ export function Reports() {
 }
 
 // ------------------------------------------------------------------ shared summary table
-function SummaryTable({ rows, catalog, detailed }: { rows: ReportRow[]; catalog: Catalog; detailed: boolean }) {
+function SummaryTable({ rows, catalog, detailed, pageKey, reset }: {
+  rows: ReportRow[]
+  catalog: Catalog
+  detailed: boolean
+  /** paging: one key per report, `reset` sends the table back to page 1 */
+  pageKey: string
+  reset: unknown[]
+}) {
   const { t, lang } = useI18n()
   const label = usePackLabel()
   const list = rows.map((r) => ({ r, p: catalog.byId.get(r.product_id)! })).filter((x) => x.p)
   const ordered = catalog.products.map((p) => list.find((x) => x.p.id === p.id)).filter(Boolean) as typeof list
+  const pg = usePaged(ordered, pageKey, reset)
 
   // footer: liters and kg
   const tot = { volume: { o: 0, i: 0, x: 0, c: 0 }, weight: { o: 0, i: 0, x: 0, c: 0 } }
@@ -104,99 +114,102 @@ function SummaryTable({ rows, catalog, detailed }: { rows: ReportRow[]; catalog:
   const cell = (v: number, cls?: string) => <td className={cx('r num', v === 0 && 'text-stone-300', cls)}>{fmtNum(v, 3)}</td>
 
   return (
-    <div className="table-wrap">
-      <table className="tbl">
-        <thead>
-          <tr>
-            <th>{t('product')}</th>
-            <th>{t('packSize')}</th>
-            <th className="r">{t('opening')}</th>
-            {detailed ? (
-              <>
-                <th className="r">{t('purchased')}</th>
-                <th className="r">{t('returnIn')}</th>
-                <th className="r">{t('sold')}</th>
-                <th className="r">{t('returnOut')}</th>
-                <th className="r">{t('damaged')}</th>
-                <th className="r">{t('expiredCol')}</th>
-              </>
-            ) : (
-              <>
-                <th className="r">{t('in')}</th>
-                <th className="r">{t('out')}</th>
-              </>
-            )}
-            <th className="r">{t('repSoldAt')}</th>
-            <th className="r">{t('repSales')}</th>
-            <th className="r">{t('repProfit')}</th>
-            <th className="r">{t('adjusted')}</th>
-            <th className="r">{t('closing')}</th>
-            <th className="r">{t('closingTotal')}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {ordered.map(({ r, p }) => (
-            <tr key={p.id}>
-              <td><ProductName p={p} /></td>
-              <td className="num whitespace-nowrap text-brand-800">{label(p)}</td>
-              {cell(r.opening)}
+    <>
+      <div className="table-wrap">
+        <table className="tbl">
+          <thead>
+            <tr>
+              <th>{t('product')}</th>
+              <th>{t('packSize')}</th>
+              <th className="r">{t('opening')}</th>
               {detailed ? (
                 <>
-                  {cell(r.purchased, 'text-brand-700')}
-                  {cell(r.returned_in, 'text-brand-700')}
-                  {cell(r.sold, 'text-orange-700')}
-                  {cell(r.returned_out, 'text-orange-700')}
-                  {cell(r.damaged, 'text-red-700')}
-                  {cell(r.expired, 'text-red-700')}
+                  <th className="r">{t('purchased')}</th>
+                  <th className="r">{t('returnIn')}</th>
+                  <th className="r">{t('sold')}</th>
+                  <th className="r">{t('returnOut')}</th>
+                  <th className="r">{t('damaged')}</th>
+                  <th className="r">{t('expiredCol')}</th>
                 </>
               ) : (
                 <>
-                  {cell(inOf(r), 'text-brand-700 font-medium')}
-                  {cell(outOf(r), 'text-orange-700 font-medium')}
+                  <th className="r">{t('in')}</th>
+                  <th className="r">{t('out')}</th>
                 </>
               )}
-              <td className="r num whitespace-nowrap">
-                {r.soldQty > 0 ? fmtMoney(soldAt(r), lang) : <span className="text-stone-300">—</span>}
-                {r.soldQty > 0 && r.cost > 0 && <div className="text-xs text-stone-500">{t('repCostShort')} {fmtMoney(r.cost / r.soldQty, lang)}</div>}
-              </td>
-              <td className="r num whitespace-nowrap">{r.revenue ? fmtMoney(r.revenue, lang) : <span className="text-stone-300">—</span>}</td>
-              <td className={cx('r num whitespace-nowrap font-semibold', r.profit > 0 && 'text-brand-700', r.profit < 0 && 'text-red-700')}>
-                {r.revenue || r.profit ? (r.profit < 0 ? `${t('repLoss')} ${fmtMoney(-r.profit, lang)}` : fmtMoney(r.profit, lang)) : <span className="font-normal text-stone-300">—</span>}
-              </td>
-              {cell(r.adjusted)}
-              <td className={cx('r num font-semibold', r.closing <= 0 && 'text-red-700')}>{fmtNum(r.closing, 3)}</td>
-              <td className="r num whitespace-nowrap text-stone-600">{p.pack_unit === 'pcs' ? '' : fmtTotal(r.closing, p.pack_size, p.pack_unit, lang)}</td>
+              <th className="r">{t('repSoldAt')}</th>
+              <th className="r">{t('repSales')}</th>
+              <th className="r">{t('repProfit')}</th>
+              <th className="r">{t('adjusted')}</th>
+              <th className="r">{t('closing')}</th>
+              <th className="r">{t('closingTotal')}</th>
             </tr>
-          ))}
-        </tbody>
-        <tfoot>
-          {(['volume', 'weight'] as const).map((m) =>
-            tot[m].o || tot[m].i || tot[m].x || tot[m].c ? (
-              <tr key={m}>
-                <td colSpan={2}>{m === 'volume' ? t('liquidTotal') : t('dryTotal')}</td>
-                <td className="r num">{fmtBase(tot[m].o, m, lang)}</td>
-                {detailed ? <td className="r num" colSpan={2}>{fmtBase(tot[m].i, m, lang)}</td> : <td className="r num">{fmtBase(tot[m].i, m, lang)}</td>}
-                {detailed ? <td className="r num" colSpan={4}>{fmtBase(tot[m].x, m, lang)}</td> : <td className="r num">{fmtBase(tot[m].x, m, lang)}</td>}
-                <td colSpan={3} />
-                <td />
-                <td className="r num" colSpan={2}>{fmtBase(tot[m].c, m, lang)}</td>
+          </thead>
+          <tbody>
+            {pg.items.map(({ r, p }) => (
+              <tr key={p.id}>
+                <td><ProductName p={p} /></td>
+                <td className="num whitespace-nowrap text-brand-800">{label(p)}</td>
+                {cell(r.opening)}
+                {detailed ? (
+                  <>
+                    {cell(r.purchased, 'text-brand-700')}
+                    {cell(r.returned_in, 'text-brand-700')}
+                    {cell(r.sold, 'text-orange-700')}
+                    {cell(r.returned_out, 'text-orange-700')}
+                    {cell(r.damaged, 'text-red-700')}
+                    {cell(r.expired, 'text-red-700')}
+                  </>
+                ) : (
+                  <>
+                    {cell(inOf(r), 'text-brand-700 font-medium')}
+                    {cell(outOf(r), 'text-orange-700 font-medium')}
+                  </>
+                )}
+                <td className="r num whitespace-nowrap">
+                  {r.soldQty > 0 ? fmtMoney(soldAt(r), lang) : <span className="text-stone-300">—</span>}
+                  {r.soldQty > 0 && r.cost > 0 && <div className="text-xs text-stone-500">{t('repCostShort')} {fmtMoney(r.cost / r.soldQty, lang)}</div>}
+                </td>
+                <td className="r num whitespace-nowrap">{r.revenue ? fmtMoney(r.revenue, lang) : <span className="text-stone-300">—</span>}</td>
+                <td className={cx('r num whitespace-nowrap font-semibold', r.profit > 0 && 'text-brand-700', r.profit < 0 && 'text-red-700')}>
+                  {r.revenue || r.profit ? (r.profit < 0 ? `${t('repLoss')} ${fmtMoney(-r.profit, lang)}` : fmtMoney(r.profit, lang)) : <span className="font-normal text-stone-300">—</span>}
+                </td>
+                {cell(r.adjusted)}
+                <td className={cx('r num font-semibold', r.closing <= 0 && 'text-red-700')}>{fmtNum(r.closing, 3)}</td>
+                <td className="r num whitespace-nowrap text-stone-600">{p.pack_unit === 'pcs' ? '' : fmtTotal(r.closing, p.pack_size, p.pack_unit, lang)}</td>
               </tr>
-            ) : null,
-          )}
-          {(money.revenue !== 0 || money.profit !== 0) && (
-            <tr>
-              <td colSpan={detailed ? 9 : 5}>{t('repMoneyTotal')}</td>
-              <td />
-              <td className="r num whitespace-nowrap">{fmtMoney(money.revenue, lang)}</td>
-              <td className={cx('r num whitespace-nowrap', money.profit < 0 ? 'text-red-700' : 'text-brand-700')}>
-                {money.profit < 0 ? `${t('repLoss')} ${fmtMoney(-money.profit, lang)}` : fmtMoney(money.profit, lang)}
-              </td>
-              <td colSpan={3} />
-            </tr>
-          )}
-        </tfoot>
-      </table>
-    </div>
+            ))}
+          </tbody>
+          <tfoot>
+            {(['volume', 'weight'] as const).map((m) =>
+              tot[m].o || tot[m].i || tot[m].x || tot[m].c ? (
+                <tr key={m}>
+                  <td colSpan={2}>{m === 'volume' ? t('liquidTotal') : t('dryTotal')}</td>
+                  <td className="r num">{fmtBase(tot[m].o, m, lang)}</td>
+                  {detailed ? <td className="r num" colSpan={2}>{fmtBase(tot[m].i, m, lang)}</td> : <td className="r num">{fmtBase(tot[m].i, m, lang)}</td>}
+                  {detailed ? <td className="r num" colSpan={4}>{fmtBase(tot[m].x, m, lang)}</td> : <td className="r num">{fmtBase(tot[m].x, m, lang)}</td>}
+                  <td colSpan={3} />
+                  <td />
+                  <td className="r num" colSpan={2}>{fmtBase(tot[m].c, m, lang)}</td>
+                </tr>
+              ) : null,
+            )}
+            {(money.revenue !== 0 || money.profit !== 0) && (
+              <tr>
+                <td colSpan={detailed ? 9 : 5}>{t('repMoneyTotal')}</td>
+                <td />
+                <td className="r num whitespace-nowrap">{fmtMoney(money.revenue, lang)}</td>
+                <td className={cx('r num whitespace-nowrap', money.profit < 0 ? 'text-red-700' : 'text-brand-700')}>
+                  {money.profit < 0 ? `${t('repLoss')} ${fmtMoney(-money.profit, lang)}` : fmtMoney(money.profit, lang)}
+                </td>
+                <td colSpan={3} />
+              </tr>
+            )}
+          </tfoot>
+        </table>
+      </div>
+      <Pagination pg={pg} />
+    </>
   )
 }
 
@@ -255,7 +268,7 @@ function DailyReport() {
       <PrintHeader title={t('dailyReport')} subtitle={`${fmtDate(date, lang)} (${weekday(date, lang)})`} />
       <h2 className="no-print mb-2 font-semibold">{t('dailyReport')} · <span className="num">{fmtDate(date, lang)}</span> <span className="text-stone-500">({weekday(date, lang)})</span></h2>
       {loading && !data ? <Loading /> : error ? <ErrorBox onRetry={reload}>{errText(error, t)}</ErrorBox> : data && (
-        <Card className="print-plain"><SummaryTable rows={rows} catalog={data.catalog} detailed={detailed} /></Card>
+        <Card className="print-plain"><SummaryTable rows={rows} catalog={data.catalog} detailed={detailed} pageKey="report-daily" reset={[date, onlyMoved]} /></Card>
       )}
     </div>
   )
@@ -320,7 +333,7 @@ function MonthlyReport() {
 
       {loading && !data ? <Loading /> : error ? <ErrorBox onRetry={reload}>{errText(error, t)}</ErrorBox> : !data ? <Empty>{t('noData')}</Empty> : (
         <>
-          <Card className="print-plain"><SummaryTable rows={rows} catalog={data.catalog} detailed={detailed} /></Card>
+          <Card className="print-plain"><SummaryTable rows={rows} catalog={data.catalog} detailed={detailed} pageKey="report-monthly" reset={[month, onlyMoved]} /></Card>
 
           <Card className="print-plain" title={`${t('dailyTotals')} · ${fmtMonth(month, lang)}`}>
             {days.length === 0 ? <Empty>{t('noEntries')}</Empty> : (
@@ -402,6 +415,7 @@ function RegisterReport() {
   const totIn = (data?.reg ?? []).reduce((s, r) => s + +r.qty_in, 0)
   const totOut = (data?.reg ?? []).reduce((s, r) => s + +r.qty_out, 0)
   const tl = (n: number) => (p && p.pack_unit !== 'pcs' ? fmtTotal(n, p.pack_size, p.pack_unit, lang) : '')
+  const pg = usePaged(data?.reg ?? [], 'report-register', [product, from, to, onlyMoves])
 
   const exportCsv = () =>
     p && downloadCsv(`register-${p.name}-${fmtPack(p.pack_size, p.pack_unit)}-${from}-${to}`, [t('date'), t('opening'), t('in'), t('out'), t('closing'), t('closingTotal')],
@@ -437,7 +451,7 @@ function RegisterReport() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data!.reg.map((r) => {
+                  {pg.items.map((r) => {
                     const active = +r.qty_in !== 0 || +r.qty_out !== 0
                     return (
                       <tr key={r.day} className={active ? undefined : 'text-stone-400'}>
@@ -464,6 +478,7 @@ function RegisterReport() {
               </table>
             </div>
           )}
+          <Pagination pg={pg} />
         </Card>
       )}
     </div>
@@ -497,7 +512,12 @@ function StockReport() {
       .filter((g) => g.items.length)
   }, [data, hideZero])
 
-  const all = groups.flatMap((g) => g.items)
+  const all = useMemo(() => groups.flatMap((g) => g.items), [groups])
+  // page through the flat list; each page shows the headings of the categories on it
+  const pg = usePaged(all, 'report-stock', [date, hideZero])
+  const pageGroups = groups
+    .map((g) => ({ ...g, rows: pg.items.filter((x) => x.p.category_id === g.c.id) }))
+    .filter((g) => g.rows.length)
   const sum = (m: 'volume' | 'weight') => all.filter((x) => measureOf(x.p.pack_unit) === m).reduce((s, x) => s + x.qty * baseOf(x.p.pack_size, x.p.pack_unit), 0)
 
   const exportCsv = () =>
@@ -524,12 +544,12 @@ function StockReport() {
                     <th className="r">{t('total')}</th>
                   </tr>
                 </thead>
-                {groups.map((g) => (
+                {pageGroups.map((g) => (
                   <tbody key={g.c.id}>
                     <tr className="bg-stone-50">
                       <td colSpan={4} className="font-semibold text-stone-700">{pick(g.c.name, g.c.name_ur)} <span className="num text-xs font-normal text-stone-400">({g.items.length})</span></td>
                     </tr>
-                    {g.items.map(({ p, qty }) => (
+                    {g.rows.map(({ p, qty }) => (
                       <tr key={p.id}>
                         <td className="ps-6"><ProductName p={p} /></td>
                         <td className="num text-brand-800">{label(p)}</td>
@@ -554,6 +574,7 @@ function StockReport() {
               </table>
             </div>
           )}
+          <Pagination pg={pg} />
         </Card>
       )}
     </div>
@@ -587,6 +608,15 @@ function ProfitReport() {
     { inv: 0, sales: 0, disc: 0, cost: 0, profit: 0, rec: 0 },
   )
   const pct = (p: number, s: number) => (s ? `${Math.round((p / s) * 100)}%` : '—')
+  // products of the catalog only (rows of deleted products are skipped), paged
+  const prods = useMemo(
+    () => (data?.prods ?? []).flatMap((r) => {
+      const p = data?.catalog.byId.get(r.product_id)
+      return p ? [{ r, p }] : []
+    }),
+    [data],
+  )
+  const pg = usePaged(prods, 'report-profit-products', [month])
 
   const exportCsv = () => {
     if (!data) return
@@ -671,7 +701,7 @@ function ProfitReport() {
           </Card>
 
           <Card className="print-plain" title={t('productsByProfit')}>
-            {data.prods.length === 0 ? <Empty>{t('noEntries')}</Empty> : (
+            {prods.length === 0 ? <Empty>{t('noEntries')}</Empty> : (
               <div className="table-wrap">
                 <table className="tbl">
                   <thead>
@@ -686,9 +716,7 @@ function ProfitReport() {
                     </tr>
                   </thead>
                   <tbody>
-                    {data.prods.map((r) => {
-                      const p = data.catalog.byId.get(r.product_id)
-                      if (!p) return null
+                    {pg.items.map(({ r, p }) => {
                       return (
                         <tr key={r.product_id}>
                           <td><div className="font-medium">{pick(p.name, p.name_ur)}</div>{p.company_name && <div className="text-xs text-stone-500">{p.company_name}</div>}</td>
@@ -705,6 +733,7 @@ function ProfitReport() {
                 </table>
               </div>
             )}
+            <Pagination pg={pg} />
             <p className="px-4 py-2 text-xs text-stone-500">{t('unpricedNote')}</p>
           </Card>
         </>

@@ -3,6 +3,7 @@ import { useState, type ReactNode } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { AccountPicker } from '../components/AccountPicker'
 import { PrintHeader, ProductName, ProductPicker, ReportButtons } from '../components/domain'
+import { Pagination } from '../components/Pagination'
 import { Badge, Button, Card, Empty, ErrorBox, Field, Input, Loading, Modal, PageHeader, Tabs, useFeedback } from '../components/ui'
 import { useOrg } from '../lib/app'
 import { loadCatalog } from '../lib/catalog'
@@ -16,6 +17,7 @@ import {
   investorStatus, loadInvestors, type DailyProfit, type InvestorEntry, type InvestorRow, type InvestorStatus, type LotStatus, type Settlement,
 } from '../lib/investors'
 import { fmtMoney, r2 } from '../lib/money'
+import { usePaged } from '../lib/paging'
 import { supabase } from '../lib/supabase'
 import { fmtNum, fmtPack } from '../lib/units'
 
@@ -58,9 +60,10 @@ export function InvestorsList() {
   const errOf = useErr()
   const [adding, setAdding] = useState(false)
   const { data, error, loading, reload } = useLoad(() => loadInvestors(org.id), [org.id, version])
+  const list = data ?? []
+  const pg = usePaged(list, 'investors')
 
   if (!isAdmin) return <Empty>{t('auditAdminOnly')}</Empty>
-  const list = data ?? []
   const tot = list.reduce((s, r) => ({ capital: s.capital + r.capital, stock: s.stock + r.stock_cost, profit: s.profit + r.profit_now, avail: s.avail + r.available }), { capital: 0, stock: 0, profit: 0, avail: 0 })
   const m = (v: number) => fmtMoney(v, lang)
 
@@ -96,38 +99,41 @@ export function InvestorsList() {
                 <Button className="mt-2" onClick={() => setAdding(true)}><Plus className="size-4" /> {t('invAdd')}</Button>
               </Empty>
             ) : (
-              <div className="table-wrap">
-                <table className="tbl">
-                  <thead>
-                    <tr>
-                      <th>{t('name')}</th>
-                      <th className="r">{t('invCapital')}</th>
-                      <th className="r">{t('invInStock')}</th>
-                      <th className="r">{t('invProfitSoFar')}</th>
-                      <th className="r">{t('invAvailable')}</th>
-                      <th>{t('status')}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {list.map((r) => {
-                      const st = investorStatus(r)
-                      return (
-                        <tr key={r.id} className={cx('cursor-pointer', !r.is_active && 'opacity-60')} onClick={() => nav(`/investors/${r.id}`)}>
-                          <td>
-                            <div className="font-medium">{r.name}</div>
-                            <div className="text-xs text-stone-500">{t('invShareShort', { n: fmtNum(r.profit_share) })}{r.phone ? ` · ${r.phone}` : ''}</div>
-                          </td>
-                          <td className="r num font-medium">{m(r.capital)}</td>
-                          <td className="r num">{m(r.stock_cost)}</td>
-                          <td className={cx('r num font-semibold', r.profit_now < 0 ? 'text-red-700' : 'text-brand-700')}>{m(r.profit_now)}</td>
-                          <td className="r num text-sky-800">{m(r.available)}</td>
-                          <td><Badge tone={STATUS[st].tone}>{statusText(r, t)}</Badge></td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              <>
+                <div className="table-wrap">
+                  <table className="tbl">
+                    <thead>
+                      <tr>
+                        <th>{t('name')}</th>
+                        <th className="r">{t('invCapital')}</th>
+                        <th className="r">{t('invInStock')}</th>
+                        <th className="r">{t('invProfitSoFar')}</th>
+                        <th className="r">{t('invAvailable')}</th>
+                        <th>{t('status')}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pg.items.map((r) => {
+                        const st = investorStatus(r)
+                        return (
+                          <tr key={r.id} className={cx('cursor-pointer', !r.is_active && 'opacity-60')} onClick={() => nav(`/investors/${r.id}`)}>
+                            <td>
+                              <div className="font-medium">{r.name}</div>
+                              <div className="text-xs text-stone-500">{t('invShareShort', { n: fmtNum(r.profit_share) })}{r.phone ? ` · ${r.phone}` : ''}</div>
+                            </td>
+                            <td className="r num font-medium">{m(r.capital)}</td>
+                            <td className="r num">{m(r.stock_cost)}</td>
+                            <td className={cx('r num font-semibold', r.profit_now < 0 ? 'text-red-700' : 'text-brand-700')}>{m(r.profit_now)}</td>
+                            <td className="r num text-sky-800">{m(r.available)}</td>
+                            <td><Badge tone={STATUS[st].tone}>{statusText(r, t)}</Badge></td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <Pagination pg={pg} />
+              </>
             )}
           </Card>
         </>
@@ -279,6 +285,7 @@ export function InvestorDetail() {
 function LotsTable({ lots, share }: { lots: LotStatus[]; share: number }) {
   const { t, lang, pick } = useI18n()
   const m = (v: number) => fmtMoney(v, lang)
+  const pg = usePaged(lots, 'investorLots', [lots[0]?.investor_id])
   if (!lots.length) return <Card><Empty>{t('invNoStock')}</Empty></Card>
   const tot = lots.reduce((s, l) => ({ cost: s.cost + l.qty * l.unit_cost, rev: s.rev + l.revenue, gp: s.gp + l.gross_profit }), { cost: 0, rev: 0, gp: 0 })
   return (
@@ -298,7 +305,7 @@ function LotsTable({ lots, share }: { lots: LotStatus[]; share: number }) {
             </tr>
           </thead>
           <tbody>
-            {lots.map((l) => (
+            {pg.items.map((l) => (
               <tr key={l.id}>
                 <td>
                   <div className="font-medium">{pick(l.product_name, l.product_name_ur)} <span className="num text-brand-800">{fmtPack(l.pack_size, l.pack_unit, lang)}</span></div>
@@ -325,6 +332,7 @@ function LotsTable({ lots, share }: { lots: LotStatus[]; share: number }) {
           </tfoot>
         </table>
       </div>
+      <Pagination pg={pg} />
       <p className="px-4 pb-3 text-xs text-stone-500">{t('invGross')} · {t('invShareShort', { n: fmtNum(share) })}</p>
     </Card>
   )
@@ -344,6 +352,7 @@ function DailyTable({ investor }: { investor: InvestorRow }) {
   const rows = data ?? []
   const tot = rows.reduce((s, d) => ({ rev: s.rev + d.revenue, cost: s.cost + d.cost, gp: s.gp + d.gross_profit, inv: s.inv + d.investor_profit }), { rev: 0, cost: 0, gp: 0, inv: 0 })
   const max = Math.max(1, ...rows.map((d) => Math.abs(d.gross_profit)))
+  const pg = usePaged(rows, 'investorDaily', [investor.id, month])
 
   return (
     <Card className="print-plain">
@@ -356,48 +365,51 @@ function DailyTable({ investor }: { investor: InvestorRow }) {
       </div>
       <PrintHeader title={`${investor.name} · ${t('invTabDaily')}`} subtitle={fmtMonth(month, lang)} />
       {loading && !data ? <Loading /> : error ? <ErrorBox onRetry={reload}>{errText(error, t)}</ErrorBox> : rows.length === 0 ? <Empty>{t('invNoSales')}</Empty> : (
-        <div className="table-wrap">
-          <table className="tbl">
-            <thead>
-              <tr>
-                <th>{t('date')}</th>
-                <th className="r">{t('qty')}</th>
-                <th className="r">{t('invRevenue')}</th>
-                <th className="r">{t('invCost')}</th>
-                <th className="r">{t('invProfit')}</th>
-                <th className="r">{t('invHisPart')}</th>
-                <th className="no-print w-40" />
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((d) => (
-                <tr key={d.day}>
-                  <td className="num whitespace-nowrap">{fmtDate(d.day, lang)}</td>
-                  <td className="r num">{fmtNum(d.qty, 3)}</td>
-                  <td className="r num">{m(d.revenue)}</td>
-                  <td className="r num">{m(d.cost)}</td>
-                  <td className={cx('r num font-medium', d.gross_profit < 0 ? 'text-red-700' : 'text-brand-700')}>{m(d.gross_profit)}</td>
-                  <td className={cx('r num font-semibold', d.investor_profit < 0 ? 'text-red-700' : 'text-brand-800')}>{m(d.investor_profit)}</td>
-                  <td className="no-print">
-                    <div className="h-2 rounded-full bg-stone-100">
-                      <div className={cx('h-2 rounded-full', d.gross_profit < 0 ? 'bg-red-500' : 'bg-primary')} style={{ width: `${(Math.abs(d.gross_profit) / max) * 100}%` }} />
-                    </div>
-                  </td>
+        <>
+          <div className="table-wrap">
+            <table className="tbl">
+              <thead>
+                <tr>
+                  <th>{t('date')}</th>
+                  <th className="r">{t('qty')}</th>
+                  <th className="r">{t('invRevenue')}</th>
+                  <th className="r">{t('invCost')}</th>
+                  <th className="r">{t('invProfit')}</th>
+                  <th className="r">{t('invHisPart')}</th>
+                  <th className="no-print w-40" />
                 </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr>
-                <td colSpan={2}>{t('total')}</td>
-                <td className="r num">{m(tot.rev)}</td>
-                <td className="r num">{m(tot.cost)}</td>
-                <td className={cx('r num', tot.gp < 0 ? 'text-red-700' : 'text-brand-700')}>{m(tot.gp)}</td>
-                <td className={cx('r num', tot.inv < 0 ? 'text-red-700' : 'text-brand-800')}>{m(tot.inv)}</td>
-                <td className="no-print" />
-              </tr>
-            </tfoot>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {pg.items.map((d) => (
+                  <tr key={d.day}>
+                    <td className="num whitespace-nowrap">{fmtDate(d.day, lang)}</td>
+                    <td className="r num">{fmtNum(d.qty, 3)}</td>
+                    <td className="r num">{m(d.revenue)}</td>
+                    <td className="r num">{m(d.cost)}</td>
+                    <td className={cx('r num font-medium', d.gross_profit < 0 ? 'text-red-700' : 'text-brand-700')}>{m(d.gross_profit)}</td>
+                    <td className={cx('r num font-semibold', d.investor_profit < 0 ? 'text-red-700' : 'text-brand-800')}>{m(d.investor_profit)}</td>
+                    <td className="no-print">
+                      <div className="h-2 rounded-full bg-stone-100">
+                        <div className={cx('h-2 rounded-full', d.gross_profit < 0 ? 'bg-red-500' : 'bg-primary')} style={{ width: `${(Math.abs(d.gross_profit) / max) * 100}%` }} />
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td colSpan={2}>{t('total')}</td>
+                  <td className="r num">{m(tot.rev)}</td>
+                  <td className="r num">{m(tot.cost)}</td>
+                  <td className={cx('r num', tot.gp < 0 ? 'text-red-700' : 'text-brand-700')}>{m(tot.gp)}</td>
+                  <td className={cx('r num', tot.inv < 0 ? 'text-red-700' : 'text-brand-800')}>{m(tot.inv)}</td>
+                  <td className="no-print" />
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+          <Pagination pg={pg} />
+        </>
       )}
     </Card>
   )
@@ -415,6 +427,7 @@ function HistoryTable({ investor }: { investor: InvestorRow }) {
     if (s.error) throw s.error
     return { entries: (e.data ?? []) as InvestorEntry[], settlements: new Map(((s.data ?? []) as Settlement[]).map((x) => [x.id, x])) }
   }, [org.id, investor.id, version])
+  const pg = usePaged(data?.entries ?? [], 'investorHistory', [investor.id])
   if (loading && !data) return <Loading />
   if (error) return <ErrorBox onRetry={reload}>{errText(error, t)}</ErrorBox>
   if (!data?.entries.length) return <Card><Empty>{t('invNoHistory')}</Empty></Card>
@@ -428,7 +441,7 @@ function HistoryTable({ investor }: { investor: InvestorRow }) {
         <table className="tbl">
           <thead><tr><th>{t('date')}</th><th>{t('type')}</th><th>{t('details')}</th><th className="r">{t('amount')}</th><th>{t('by')}</th></tr></thead>
           <tbody>
-            {data.entries.map((e) => {
+            {pg.items.map((e) => {
               const s = e.settlement_id ? data.settlements.get(e.settlement_id) : undefined
               return (
                 <tr key={e.id}>
@@ -445,6 +458,7 @@ function HistoryTable({ investor }: { investor: InvestorRow }) {
           </tbody>
         </table>
       </div>
+      <Pagination pg={pg} />
     </Card>
   )
 }
