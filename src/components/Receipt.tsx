@@ -13,6 +13,7 @@ import { receiptNoteOf } from '../lib/receiptNote'
 import { supabase } from '../lib/supabase'
 import type { PackType, PackUnit, Sale } from '../lib/types'
 import { fmtNum, unitLabel } from '../lib/units'
+import { ShotArea, useImageShare, WhatsAppButton } from './ShareImage'
 import { Button, ErrorBox, Loading, Modal } from './ui'
 
 type Paper = '80mm' | 'a4'
@@ -186,7 +187,8 @@ function ReceiptView({ data, paper }: { data: ReceiptData; paper: Paper }) {
 
 /** Preview + print a sale receipt */
 export function ReceiptModal({ saleId, local, onClose, onNewSale }: { saleId: string | null; local?: ReceiptData | null; onClose: () => void; onNewSale?: () => void }) {
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
+  const { org } = useOrg()
   const [paper, setPaper] = useState<Paper>(() => {
     try {
       return localStorage.getItem(PAPER_KEY) === 'a4' ? 'a4' : '80mm'
@@ -199,6 +201,22 @@ export function ReceiptModal({ saleId, local, onClose, onNewSale }: { saleId: st
   // a sale saved offline: its receipt is built from what is on this device
   const data = local ?? loaded.data
   const { error, loading } = loaded
+
+  // WhatsApp: the receipt as an image, at phone width
+  const shot = useImageShare(data)
+  const share = async () => {
+    if (!data) return
+    const { sale } = data
+    const total = `${t('grandTotal')}: ${fmtMoney(sale.total, lang)}`
+    const due = Math.round((Number(sale.total) - Number(sale.paid) - (Number(sale.advance_used) || 0)) * 100) / 100
+    const text = [
+      t('shareText', { shop: org.name }),
+      [sale.invoice_no ? `${t('invoiceNum')} ${sale.invoice_no}` : '', fmtDate(sale.sale_date, lang)].filter(Boolean).join(' · '),
+      total,
+      due > 0 ? `${t('balanceDue')}: ${fmtMoney(due, lang)}` : '',
+    ].filter(Boolean).join('\n')
+    await shot.share({ fileName: `${t('receipt')}-${sale.invoice_no || sale.sale_date}`, text, phone: data.party?.phone })
+  }
 
   const choosePaper = (p: Paper) => {
     setPaper(p)
@@ -249,6 +267,7 @@ export function ReceiptModal({ saleId, local, onClose, onNewSale }: { saleId: st
           {onNewSale && (
             <Button variant="secondary" onClick={onNewSale}><Plus className="size-4" /> {t('newSale')}</Button>
           )}
+          <WhatsAppButton onClick={share} disabled={!data} busy={shot.busy} />
           <Button onClick={() => setPrinting(true)} disabled={!data}><Printer className="size-4" /> {t('printReceipt')}</Button>
         </>
       }
@@ -261,6 +280,8 @@ export function ReceiptModal({ saleId, local, onClose, onNewSale }: { saleId: st
           </div>
         </div>
       )}
+      {/* off-screen copy at phone width, used for the WhatsApp image */}
+      {data && <ShotArea shotRef={shot.ref}><ReceiptView data={data} paper="80mm" /></ShotArea>}
       {printing && data && createPortal(<div id="print-area"><ReceiptView data={data} paper={paper} /></div>, document.body)}
     </Modal>
   )

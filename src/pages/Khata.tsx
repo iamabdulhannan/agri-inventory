@@ -11,6 +11,7 @@ import { RecoveryView } from '../components/khata/RecoveryView'
 import { Pagination } from '../components/Pagination'
 import { PartyForm } from '../components/PartyForm'
 import { ReceiptModal } from '../components/Receipt'
+import { IMAGE_ROWS, ShareStatement, type ShareFormat, type Statement } from '../components/ShareImage'
 import { Badge, Button, Card, Empty, ErrorBox, Input, Loading, PageHeader, Tabs, useFeedback } from '../components/ui'
 import { useOrg } from '../lib/app'
 import { downloadCsv } from '../lib/csv'
@@ -35,6 +36,24 @@ export function BalanceBadge({ kind, balance }: { kind: PartyKind; balance: numb
   if (Math.abs(balance) < 0.005) return <Badge>{t('settled')}</Badge>
   if (balance < 0) return <Badge tone="blue">{t('advance')} {fmtMoney(-balance, lang)}</Badge>
   return <Badge tone={kind === 'customer' ? 'amber' : 'red'}>{kind === 'customer' ? t('theyOwe') : t('youOwe')} {fmtMoney(balance, lang)}</Badge>
+}
+
+type LedgerRange = 'latest' | 'month' | '3m' | 'all'
+const LEDGER_RANGES: LedgerRange[] = ['latest', 'month', '3m', 'all']
+const RANGE_KEY = { latest: 'shareRangeLatest', month: 'shareRangeMonth', '3m': 'shareRange3m', all: 'shareRangeAll' } as const
+
+/** yyyy-mm-dd, n months earlier */
+function monthsBack(day: string, n: number) {
+  const d = new Date(`${day}T00:00:00Z`)
+  d.setUTCMonth(d.getUTCMonth() - n)
+  return d.toISOString().slice(0, 10)
+}
+
+/** "Owes you Rs 5,000" / "You owe ..." / "Advance ..." / "Settled", in words for a statement */
+function balanceWords(kind: PartyKind, balance: number, t: ReturnType<typeof useI18n>['t'], lang: ReturnType<typeof useI18n>['lang']) {
+  if (Math.abs(balance) < 0.005) return t('settled')
+  if (balance < 0) return `${t('advance')} ${fmtMoney(-balance, lang)}`
+  return `${kind === 'customer' ? t('theyOwe') : t('youOwe')} ${fmtMoney(balance, lang)}`
 }
 
 export function KhataList() {
@@ -192,9 +211,10 @@ export function KhataList() {
 export function KhataDetail() {
   const { id = '' } = useParams()
   const { t, lang } = useI18n()
-  const { org, version, refresh, isAdmin } = useOrg()
+  const { org, version, refresh, isAdmin, today } = useOrg()
   const { toast, confirm } = useFeedback()
   const nav = useNavigate()
+  const [range, setRange] = useState<LedgerRange>('latest')
   const [editing, setEditing] = useState(false)
   const [paying, setPaying] = useState(false)
   const [receipt, setReceipt] = useState<string | null>(null)
@@ -235,6 +255,66 @@ export function KhataDetail() {
     nav(`/khata?kind=${party.kind}`)
   }
 
+  // khata statement for WhatsApp: the chosen period, opening with the balance brought forward
+  const ledgerStatement = (format: ShareFormat): Statement => {
+    const from = range === 'month' ? `${today.slice(0, 7)}-01` : range === '3m' ? monthsBack(today, 3) : ''
+    let start = range === 'latest' ? Math.max(0, ledger.length - 20) : from ? ledger.findIndex((r) => r.entry_date >= from) : 0
+    if (start < 0) start = ledger.length
+    // an image stays readable: newest rows only (the PDF has them all)
+    const cut = format === 'image' && ledger.length - start > IMAGE_ROWS - 1
+    if (cut) start = ledger.length - (IMAGE_ROWS - 1)
+    const shown = ledger.slice(start)
+    const brought = start > 0 ? Number(ledger[start - 1].balance) : 0
+    const sum = shown.reduce((a, r) => ({ bill: a.bill + Number(r.bill), paid: a.paid + Number(r.paid) }), { bill: 0, paid: 0 })
+    const m = (v: number) => fmtMoney(v, lang)
+    return {
+      title: t('shareLedger'),
+      name: party.name,
+      phone: party.phone,
+      meta: [isCustomer ? t('customer') : t('supplier'), party.address ?? '', `${t('shareRange')}: ${t(RANGE_KEY[range])}`],
+      rows: [
+        { label: t('bill'), value: m(sum.bill) },
+        { label: t('paidCol'), value: m(sum.paid) },
+        { label: t('balance'), value: balanceWords(party.kind, party.balance, t, lang), strong: true },
+      ],
+      sections: [{
+        title: t('ledger_'),
+        head: [t('type'), t('bill'), t('paidCol'), t('balance')],
+        newest: 'end',
+        rows: [
+          ...(start > 0 ? [{ cells: [t('previousBalance'), '', '', m(brought)], strong: true }] : []),
+          ...shown.map((r) => ({
+            cells: [
+              [ledgerLabel(r.kind, t), r.ref === 'CHQ' ? t('khCheque') : r.ref].filter(Boolean).join(' · '),
+              Number(r.bill) ? m(Number(r.bill)) : '',
+              Number(r.paid) ? m(Number(r.paid)) : '',
+              m(Number(r.balance)),
+            ],
+            sub: [fmtDate(r.entry_date, lang), r.note].filter(Boolean).join(' · '),
+          })),
+        ],
+        foot: [t('total'), m(sum.bill), m(sum.paid), m(party.balance)],
+      }],
+      note: cut ? t('shareLatest', { n: IMAGE_ROWS - 1 }) : undefined,
+    }
+  }
+  const ledgerText = [
+    t('shareLedgerText', { shop: org.name }),
+    party.name,
+    `${t('balance')}: ${balanceWords(party.kind, party.balance, t, lang)}`,
+  ].join('\n')
+  const rangeChips = (
+    <div className="flex flex-wrap items-center gap-1.5 text-sm">
+      <span className="me-1 text-stone-500">{t('shareRange')}:</span>
+      {LEDGER_RANGES.map((r) => (
+        <button key={r} type="button" onClick={() => setRange(r)}
+          className={cx('rounded-full border px-3 py-1 cursor-pointer', range === r ? 'border-brand-600 bg-brand-50 font-medium text-brand-800' : 'border-stone-300 text-stone-600 hover:bg-stone-50')}>
+          {t(RANGE_KEY[r])}
+        </button>
+      ))}
+    </div>
+  )
+
   const exportCsv = () =>
     downloadCsv(`khata-${party.name}`, [t('date'), t('type'), t('reference'), t('note'), t('bill'), t('paidCol'), t('balance')],
       ledger.map((r) => [r.entry_date, ledgerLabel(r.kind, t), r.ref === 'CHQ' ? t('khCheque') : r.ref, r.note, r.bill, r.paid, r.balance]))
@@ -263,6 +343,9 @@ export function KhataDetail() {
             <Button variant="warning" onClick={() => nav(`/stock-out?party=${party.id}`)}><ShoppingCart className="size-4" /> {t('newSale')}</Button>
           )}
           <Button variant="secondary" onClick={() => setEditing(true)}><Pencil className="size-4" /> {t('edit')}</Button>
+          {ledger.length > 0 && (
+            <ShareStatement size="md" s={ledgerStatement} fileName={`${t('shareLedger')}-${party.name}-${today}`} text={ledgerText} controls={rangeChips} />
+          )}
           <ReportButtons onExcel={exportCsv} />
           {isAdmin && ledger.length === 0 && (
             <Button variant="danger" onClick={remove}><Trash2 className="size-4" /></Button>

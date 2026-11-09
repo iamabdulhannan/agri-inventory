@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { AccountPicker } from '../components/AccountPicker'
 import { PrintHeader, ProductName, ProductPicker, ReportButtons } from '../components/domain'
 import { Pagination } from '../components/Pagination'
+import { ShareStatement, type Statement } from '../components/ShareImage'
 import { Badge, Button, Card, Empty, ErrorBox, Field, Input, Loading, Modal, PageHeader, Tabs, useFeedback } from '../components/ui'
 import { useOrg } from '../lib/app'
 import { loadCatalog } from '../lib/catalog'
@@ -14,7 +15,7 @@ import { errText } from '../lib/errors'
 import { fmtDate, fmtMonth, monthOf, monthRange } from '../lib/format'
 import { useI18n, type TKey } from '../lib/i18n'
 import {
-  investorStatus, loadInvestors, type DailyProfit, type InvestorEntry, type InvestorRow, type InvestorStatus, type LotStatus, type Settlement,
+  investorPart, investorStatus, loadInvestors, type DailyProfit, type InvestorEntry, type InvestorRow, type InvestorStatus, type LotStatus, type Settlement,
 } from '../lib/investors'
 import { fmtMoney, r2 } from '../lib/money'
 import { usePaged } from '../lib/paging'
@@ -212,17 +213,18 @@ type Tab = 'stock' | 'daily' | 'history'
 
 export function InvestorDetail() {
   const { id = '' } = useParams()
-  const { t, lang } = useI18n()
+  const { t, lang, pick } = useI18n()
   const { org, version, isAdmin, refresh } = useOrg()
   const errOf = useErr()
   const [tab, setTab] = useState<Tab>('stock')
   const [dialog, setDialog] = useState<null | 'capital' | 'stock' | 'withdraw' | 'settle' | 'edit'>(null)
   const { data, error, loading, reload } = useLoad(async () => {
-    const [all, lots] = await Promise.all([
+    const [all, lots, history] = await Promise.all([
       loadInvestors(org.id),
       fetchAll<LotStatus>((a, b) => supabase.from('investor_lot_status').select('*').eq('investor_id', id).order('entry_date', { ascending: false }).range(a, b)),
+      fetchAll<InvestorEntry>((a, b) => supabase.from('investor_entries').select('*').eq('org_id', org.id).eq('investor_id', id).order('entry_date', { ascending: false }).order('created_at', { ascending: false }).range(a, b)),
     ])
-    return { inv: all.find((x) => x.id === id) ?? null, lots: lots.map((l) => ({ ...l, qty: +l.qty, unit_cost: +l.unit_cost, sold: +l.sold, left_qty: +l.left_qty, revenue: +l.revenue, gross_profit: +l.gross_profit })) }
+    return { inv: all.find((x) => x.id === id) ?? null, history, lots: lots.map((l) => ({ ...l, qty: +l.qty, unit_cost: +l.unit_cost, sold: +l.sold, left_qty: +l.left_qty, revenue: +l.revenue, gross_profit: +l.gross_profit })) }
   }, [org.id, id, version])
 
   if (!isAdmin) return <Empty>{t('auditAdminOnly')}</Empty>
@@ -233,6 +235,47 @@ export function InvestorDetail() {
   const m = (v: number) => fmtMoney(v, lang)
   const st = investorStatus(r)
   const done = () => { setDialog(null); refresh() }
+
+  // statement for WhatsApp: his money, his stock, then the money history (loaded on open)
+  const statement = (): Statement => ({
+    title: t('shareInvestor'),
+    name: r.name,
+    phone: r.phone,
+    meta: [t('invShareShort', { n: fmtNum(r.profit_share) }), statusText(r, t)],
+    rows: [
+      { label: t('invCapital'), value: m(r.capital) },
+      ...(r.total_paid_out ? [{ label: t('invPaidOut'), value: m(r.total_paid_out) }] : []),
+      { label: t('invInStock'), value: m(r.stock_cost) },
+      { label: t('invAvailable'), value: m(r.available) },
+      { label: t('invProfitSoFar'), value: m(r.profit_now), strong: true },
+    ],
+    sections: [
+      {
+        title: t('shareStock'),
+        head: [t('product'), t('invBought'), t('invSold'), t('invLeft'), t('invHisPart')],
+        newest: 'start',
+        rows: data.lots.map((l) => ({
+          cells: [pick(l.product_name, l.product_name_ur), fmtNum(l.qty, 3), fmtNum(l.sold, 3), fmtNum(l.left_qty, 3), l.revenue || l.gross_profit ? fmtNum(investorPart(l.gross_profit, r.profit_share)) : ''],
+          sub: [fmtPack(l.pack_size, l.pack_unit, lang), fmtDate(l.entry_date, lang)].join(' · '),
+        })),
+      },
+      {
+        title: t('shareHistory'),
+        head: [t('type'), t('amount')],
+        newest: 'start',
+        rows: data.history.map((e) => ({
+          cells: [t(`ie_${e.kind}`), m(+e.amount)],
+          sub: [fmtDate(e.entry_date, lang), e.note].filter(Boolean).join(' · '),
+        })),
+      },
+    ],
+  })
+  const shareText = [
+    t('shareInvestorText', { shop: org.name }),
+    r.name,
+    `${t('invCapital')}: ${m(r.capital)}`,
+    `${t('invProfitSoFar')}: ${m(r.profit_now)}`,
+  ].join('\n')
 
   return (
     <div className="space-y-4">
@@ -251,6 +294,7 @@ export function InvestorDetail() {
           <Button variant="secondary" onClick={() => setDialog('stock')}><PackagePlus className="size-4" /> {t('invAddStock')}</Button>
           <Button variant="secondary" onClick={() => setDialog('withdraw')} disabled={r.profit_now <= 0}><Wallet className="size-4" /> {t('invWithdrawProfit')}</Button>
           <Button variant={st === 'ready' ? 'warning' : 'secondary'} onClick={() => setDialog('settle')} disabled={st === 'empty'}><Scale className="size-4" /> {t('invSettle')}</Button>
+          <ShareStatement size="md" s={statement} fileName={`${t('shareInvestor')}-${r.name}`} text={shareText} />
           <Button variant="ghost" onClick={() => setDialog('edit')} aria-label={t('edit')}><Pencil className="size-4" /></Button>
         </>}
       />

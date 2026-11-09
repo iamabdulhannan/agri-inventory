@@ -9,6 +9,7 @@ import { useI18n } from '../../lib/i18n'
 import { advanceTitle, type AdvanceEntry, type AdvanceKind, type CropAdvance } from '../../lib/khataMoney'
 import { fmtMoney } from '../../lib/money'
 import { supabase } from '../../lib/supabase'
+import { ShareStatement, type Statement } from '../ShareImage'
 import { Badge, Button, Card, Empty, useFeedback } from '../ui'
 import { AdvanceMoveModal, NewAdvanceModal, type MoveKind } from './AdvanceModals'
 
@@ -18,14 +19,14 @@ const KIND_TONE: Record<AdvanceKind, 'green' | 'amber' | 'red' | 'blue'> = { dep
 export function PartyAdvances({
   party, advances, entries, onOpenInvoice, onChanged,
 }: {
-  party: { id: string; name: string }
+  party: { id: string; name: string; phone?: string | null }
   advances: CropAdvance[]
   entries: AdvanceEntry[]
   onOpenInvoice: (saleId: string) => void
   onChanged: () => void
 }) {
   const { t, lang } = useI18n()
-  const { isAdmin } = useOrg()
+  const { org, isAdmin } = useOrg()
   const { toast, confirm } = useFeedback()
   const { hash } = useLocation()
   const ref = useRef<HTMLElement>(null)
@@ -52,6 +53,38 @@ export function PartyAdvances({
     if (error) return toast(errText(error, t), 'err')
     done(a.is_closed ? t('khReopened') : t('khClosed'))
   }
+
+  // statement of one crop advance for WhatsApp: totals, then every entry (newest first)
+  const statementOf = (a: CropAdvance, list: AdvanceEntry[]): Statement => ({
+    title: t('shareAdvance'),
+    name: party.name,
+    phone: party.phone,
+    meta: [`${t('khCropAdvances')}: ${advanceTitle(a, t)}`],
+    rows: [
+      { label: t('khDeposited'), value: fmtMoney(a.deposited, lang) },
+      { label: t('khUsed'), value: fmtMoney(a.used, lang) },
+      ...(a.refunded > 0 ? [{ label: t('khRefunded'), value: fmtMoney(a.refunded, lang) }] : []),
+      ...(a.moved_to_khata > 0 ? [{ label: t('khMovedToKhata'), value: fmtMoney(a.moved_to_khata, lang) }] : []),
+      { label: t('khLeft'), value: fmtMoney(a.balance, lang), strong: true },
+    ],
+    sections: [{
+      title: t('khHistory'),
+      head: [t('type'), t('amount')],
+      newest: 'start',
+      rows: list.map((e) => ({
+        cells: [
+          [kindLabel(e.kind), e.kind === 'use' && e.sales?.invoice_no ? t('khInvNo', { n: e.sales.invoice_no }) : ''].filter(Boolean).join(' · '),
+          `${e.kind === 'deposit' ? '+' : '-'}${fmtMoney(e.amount, lang)}`,
+        ],
+        sub: fmtDate(e.entry_date, lang),
+      })),
+    }],
+  })
+  const shareTextOf = (a: CropAdvance) => [
+    t('shareAdvanceText', { shop: org.name }),
+    `${party.name} · ${advanceTitle(a, t)}`,
+    `${t('khLeft')}: ${fmtMoney(a.balance, lang)}`,
+  ].join('\n')
 
   const removeAdvance = async (a: CropAdvance) => {
     if (!(await confirm(t('khDeleteAdvanceConfirm')))) return
@@ -129,6 +162,7 @@ export function PartyAdvances({
                     <Button size="sm" variant="ghost" loading={busy === a.id} onClick={() => toggleClosed(a)}>
                       {a.is_closed ? <LockOpen className="size-4" /> : <Lock className="size-4" />} {a.is_closed ? t('khReopen') : t('khClose')}
                     </Button>
+                    <ShareStatement s={() => statementOf(a, list)} fileName={`${t('shareAdvance')}-${party.name}-${advanceTitle(a, t)}`} text={shareTextOf(a)} />
                     {isAdmin && list.length === 0 && (
                       <Button size="sm" variant="ghost" className="text-red-700" onClick={() => removeAdvance(a)} aria-label={t('delete')}>
                         <Trash2 className="size-4" />
