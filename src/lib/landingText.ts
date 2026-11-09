@@ -122,6 +122,8 @@ export const landingEn = {
 
   footerText: 'Inventory, sales and khata for agricultural pesticide, fertilizer and seed shops.',
   rights: 'All rights reserved.',
+  privacy: 'Privacy policy',
+  deleteAccount: 'Delete account',
   contact: 'Contact',
 }
 
@@ -245,5 +247,7 @@ export const landingUr: Record<LandingKey, string> = {
 
   footerText: 'زرعی ادویات، کھاد اور بیج کی دکانوں کے لیے اسٹاک، فروخت اور کھاتہ۔',
   rights: 'جملہ حقوق محفوظ ہیں۔',
+  privacy: 'پرائیویسی پالیسی',
+  deleteAccount: 'اکاؤنٹ ختم کریں',
   contact: 'رابطہ',
 }

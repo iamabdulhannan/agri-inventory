@@ -396,6 +396,8 @@ export function Landing({ onAction }: { onAction: (mode: LandingAction) => void 
         <div className="border-t border-stone-200">
           <p className={cx(CONTAINER, 'py-6 pe-20 text-sm text-stone-500 sm:pe-6')}>
             © <span className="num">{new Date().getFullYear()}</span> Agri Inventory. {L('rights')}
+            <a href="/privacy" className={cx('ms-4 rounded hover:text-stone-800 hover:underline', FOCUS)}>{L('privacy')}</a>
+            <a href="/delete-account" className={cx('ms-4 rounded hover:text-stone-800 hover:underline', FOCUS)}>{L('deleteAccount')}</a>
           </p>
         </div>
       </footer>

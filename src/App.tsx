@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { Layout } from './components/Layout'
 import { FeedbackProvider, Loading } from './components/ui'
 import { AppProvider, useApp } from './lib/app'
@@ -21,6 +21,7 @@ import { ProductDetail } from './pages/ProductDetail'
 import { Products } from './pages/Products'
 import { Reports } from './pages/Reports'
 import { Audit } from './pages/Audit'
+import { DeleteAccountPage, PrivacyPage } from './pages/Privacy'
 import { SettingsPage } from './pages/Settings'
 import { StockIn } from './pages/StockIn'
 import { StockOut } from './pages/StockOut'
@@ -33,6 +34,11 @@ function Root() {
     const { data } = supabase.auth.onAuthStateChange((event) => event === 'PASSWORD_RECOVERY' && setRecovery(true))
     return () => data.subscription.unsubscribe()
   }, [])
+
+  // public pages: open for everyone, signed in or not (Google Play and the mobile app link here)
+  const { pathname } = useLocation()
+  if (pathname === '/privacy' || pathname === '/privacy-policy') return <PrivacyPage />
+  if (pathname === '/delete-account') return <DeleteAccountPage />
 
   if (!ready) return <Loading />
   if (recovery && session)
